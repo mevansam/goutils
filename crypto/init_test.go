@@ -1,4 +1,4 @@
-package entry_test
+package crypto_test
 
 import (
 	"path"
@@ -16,14 +16,14 @@ var (
 	workingDirectory string
 )
 
-func TestData(t *testing.T) {
+func TestCrypto(t *testing.T) {
 	logger.Initialize()
 
 	_, filename, _, _ := runtime.Caller(0)
 	workingDirectory = path.Dir(filename)
 
 	RegisterFailHandler(Fail)
-	RunSpecs(t, "data entry")
+	RunSpecs(t, "crypto")
 }
 
 var _ = AfterSuite(func() {
