@@ -1,6 +1,8 @@
 package crypto_test
 
 import (
+	"time"
+
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
 
@@ -54,7 +56,9 @@ var _ = Describe("Crypt", func() {
 				crypt *crypto.Crypt
 			)
 
-			crypt, err = crypto.NewCrypt(crypto.KeyFromPassphrase("this is a test"))
+			keyXOR := time.Now().UnixNano()
+
+			crypt, err = crypto.NewCrypt(crypto.KeyFromPassphrase("this is a test", keyXOR))
 			Expect(err).NotTo(HaveOccurred())
 
 			encryptedData, err = crypt.Encrypt([]byte(plainText))
@@ -62,7 +66,7 @@ var _ = Describe("Crypt", func() {
 			Expect(encryptedData).ToNot(BeNil())
 
 			// discard crypt object used for encryption and create new one for decryption
-			crypt, err = crypto.NewCrypt(crypto.KeyFromPassphrase("this is a test"))
+			crypt, err = crypto.NewCrypt(crypto.KeyFromPassphrase("this is a test", keyXOR))
 			Expect(err).NotTo(HaveOccurred())
 
 			decryptedData, err = crypt.Decrypt(encryptedData)
@@ -70,6 +74,15 @@ var _ = Describe("Crypt", func() {
 			Expect(decryptedData).ToNot(BeNil())
 
 			Expect(string(decryptedData)).To(Equal(plainText))
+
+			// attempt to decrypt using passphrase without correct xor should fail
+			keyXOR = time.Now().UnixNano()
+
+			crypt, err = crypto.NewCrypt(crypto.KeyFromPassphrase("this is a test", keyXOR))
+			Expect(err).NotTo(HaveOccurred())
+
+			_, err = crypt.Decrypt(encryptedData)
+			Expect(err).To(HaveOccurred())
 		})
 
 		It("encrypts and decrypts using strings as input and output", func() {
@@ -81,7 +94,7 @@ var _ = Describe("Crypt", func() {
 				crypt *crypto.Crypt
 			)
 
-			crypt, err = crypto.NewCrypt(crypto.KeyFromPassphrase("this is another test"))
+			crypt, err = crypto.NewCrypt(crypto.KeyFromPassphrase("this is another test", 0))
 			Expect(err).NotTo(HaveOccurred())
 
 			encryptedData, err = crypt.EncryptB64(plainText)
@@ -89,7 +102,7 @@ var _ = Describe("Crypt", func() {
 			Expect(encryptedData).ToNot(Equal(""))
 
 			// discard crypt object used for encryption and create new one for decryption
-			crypt, err = crypto.NewCrypt(crypto.KeyFromPassphrase("this is another test"))
+			crypt, err = crypto.NewCrypt(crypto.KeyFromPassphrase("this is another test", 0))
 			Expect(err).NotTo(HaveOccurred())
 
 			decryptedData, err = crypt.DecryptB64(encryptedData)
