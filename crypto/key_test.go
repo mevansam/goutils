@@ -10,13 +10,6 @@ import (
 
 var _ = Describe("Key", func() {
 
-	// var (
-	// 	err error
-	// )
-
-	BeforeEach(func() {
-	})
-
 	Context("key creation", func() {
 
 		It("creates a random key", func() {
