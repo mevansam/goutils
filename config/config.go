@@ -21,6 +21,9 @@ type Configurable interface {
 	// Get a copy of this Configurable instance
 	Copy() (Configurable, error)
 
+	// Returns whether the configuration is valid
+	IsValid() bool
+
 	// reset all configuration values to their defaults
 	Reset()
 }

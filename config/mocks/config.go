@@ -93,6 +93,10 @@ func (f *FakeConfig) Copy() (config.Configurable, error) {
 	return nil, nil
 }
 
+func (f *FakeConfig) IsValid() bool {
+	return true
+}
+
 func (f *FakeConfig) Reset() {
 	f.InitConfig(f.inputGroup.Name(), f.inputGroup.Description())
 }
