@@ -9,18 +9,18 @@ import (
 	"github.com/mevansam/goutils/utils"
 )
 
-type TextFormatter struct {
+type TextFormat struct {
 	ShowDefaults bool
 }
 
-func NewTextFormatter() *TextFormatter {
+func NewTextFormat() *TextFormat {
 
-	return &TextFormatter{
+	return &TextFormat{
 		ShowDefaults: false,
 	}
 }
 
-func (tf *TextFormatter) ShowDataInputForm(
+func (tf *TextFormat) ShowDataInputForm(
 	title string,
 	heading string,
 	startIndent, indentSpaces, width int,

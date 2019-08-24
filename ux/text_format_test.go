@@ -3,12 +3,13 @@ package ux_test
 import (
 	"strings"
 
+	. "github.com/onsi/ginkgo"
+	. "github.com/onsi/gomega"
+
 	"github.com/mevansam/goutils/logger"
 	"github.com/mevansam/goutils/ux"
-	. "github.com/onsi/ginkgo"
 
 	test_data "github.com/mevansam/goutils/test/data"
-	. "github.com/onsi/gomega"
 )
 
 var _ = Describe("Text Formatting tests", func() {
@@ -25,7 +26,7 @@ var _ = Describe("Text Formatting tests", func() {
 
 		ic := test_data.NewTestInputCollection()
 
-		tf := ux.NewTextFormatter()
+		tf := ux.NewTextFormat()
 		tf.ShowDataInputForm(
 			"Input Data Form Reference for 'input-form'",
 			"CONFIGURATION DATA INPUT REFERENCE",
