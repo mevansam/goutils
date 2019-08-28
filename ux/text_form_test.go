@@ -68,12 +68,12 @@ var _ = Describe("Text Formatting tests", func() {
 				)
 
 				ic := test_data.NewTestInputCollection()
-
-				tf := ux.NewTextForm(
+				tf, err := ux.NewTextForm(
 					"Input Data Form for 'input-form'",
 					"CONFIGURATION DATA INPUT",
 					ic.Group("input-form"),
 				)
+				Expect(err).NotTo(HaveOccurred())
 				tf.ShowInputReference(false, 2, 2, 80)
 
 				// close piped output
@@ -117,12 +117,15 @@ var _ = Describe("Text Formatting tests", func() {
 
 			go func() {
 
-				tf := ux.NewTextForm(
+				tf, err := ux.NewTextForm(
 					"Input Data Form for 'input-form'",
 					"CONFIGURATION DATA INPUT",
 					inputGroup,
 				)
-				if err = tf.GetInput(false, 2, 80); err != nil {
+				if err == nil {
+					err = tf.GetInput(false, 2, 80)
+				}
+				if err != nil {
 					fmt.Println(err.Error())
 				}
 			}()

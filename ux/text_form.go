@@ -21,15 +21,24 @@ type TextForm struct {
 
 func NewTextForm(
 	title, heading string,
-	inputGroup *entry.InputGroup,
-) *TextForm {
+	input entry.Input,
+) (*TextForm, error) {
+
+	var (
+		ok         bool
+		inputGroup *entry.InputGroup
+	)
+
+	if inputGroup, ok = input.(*entry.InputGroup); !ok {
+		return nil, fmt.Errorf("input is not of type entry.InputGroup: %#v", input)
+	}
 
 	return &TextForm{
 		title:   title,
 		heading: heading,
 
 		inputGroup: inputGroup,
-	}
+	}, nil
 }
 
 func (tf *TextForm) GetInput(
