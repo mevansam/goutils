@@ -1,8 +1,8 @@
 package data
 
 import (
-	. "github.com/onsi/gomega"
 	"github.com/mevansam/goutils/data/entry"
+	. "github.com/onsi/gomega"
 )
 
 func NewTestInputCollection() *entry.InputCollection {

@@ -8,7 +8,7 @@ type InputCursor struct {
 	index   int
 }
 
-func NewInputCursor(
+func NewInputCursorFromCollection(
 	groupName string,
 	collection *InputCollection,
 ) (*InputCursor, error) {
@@ -20,11 +20,18 @@ func NewInputCursor(
 			groupName)
 	}
 
+	return NewInputCursor(input), nil
+}
+
+func NewInputCursor(
+	input *InputGroup,
+) *InputCursor {
+
 	return &InputCursor{
 		parents: []*InputCursor{},
 		group:   input,
 		index:   -1,
-	}, nil
+	}
 }
 
 // advances the cursor to the next input

@@ -7,11 +7,11 @@ import (
 	"reflect"
 	"strings"
 
-	. "github.com/onsi/ginkgo"
-	. "github.com/onsi/gomega"
 	"github.com/mevansam/goutils/data/entry"
 	"github.com/mevansam/goutils/logger"
 	test_data "github.com/mevansam/goutils/test/data"
+	. "github.com/onsi/ginkgo"
+	. "github.com/onsi/gomega"
 )
 
 var _ = Describe("Input Collection", func() {
@@ -178,7 +178,7 @@ var _ = Describe("Input Collection", func() {
 				"attrib14": "value for attrib14",
 			}
 
-			cursor, err = entry.NewInputCursor("input-form", ic)
+			cursor, err = entry.NewInputCursorFromCollection("input-form", ic)
 			Expect(err).NotTo(HaveOccurred())
 
 			cursor = advanceCursorPositionAndValidate(cursor, "group1")
@@ -211,7 +211,7 @@ var _ = Describe("Input Collection", func() {
 				"attrib14":   "default value for attrib14",
 			}
 
-			cursor, err = entry.NewInputCursor("input-form", ic)
+			cursor, err = entry.NewInputCursorFromCollection("input-form", ic)
 			Expect(err).NotTo(HaveOccurred())
 
 			cursor = advanceCursorPositionAndValidate(cursor, "group1")
@@ -259,7 +259,7 @@ var _ = Describe("Input Collection", func() {
 				"attrib14":   "value for attrib14",
 			}
 
-			cursor, err = entry.NewInputCursor("input-form", ic)
+			cursor, err = entry.NewInputCursorFromCollection("input-form", ic)
 			Expect(err).NotTo(HaveOccurred())
 
 			cursor = advanceCursorPositionAndValidate(cursor, "group1")
