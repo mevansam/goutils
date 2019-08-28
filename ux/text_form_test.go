@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"reflect"
 	"strings"
 
 	"github.com/mevansam/goutils/data/entry"
@@ -115,6 +116,16 @@ var _ = Describe("Text Formatting tests", func() {
 
 		It("gathers intput for the form from stdin", func() {
 
+			expectedValues := map[string]string{
+				"attrib12":   "value for attrib12",
+				"attrib122":  "value for attrib122",
+				"attrib1221": "value for attrib1221",
+				"attrib131":  "value for attrib131",
+				"attrib1311": "value for attrib1311",
+				"attrib1312": "value for attrib1312",
+				"attrib14":   "value for attrib14",
+			}
+
 			go func() {
 
 				tf, err := ux.NewTextForm(
@@ -153,6 +164,11 @@ var _ = Describe("Text Formatting tests", func() {
 					Expect(expected).To(Equal(actual))
 				}
 			}
+
+			values, err := inputGroup.InputValues()
+			Expect(err).ToNot(HaveOccurred())
+			Expect(len(values)).To(Equal(len(expectedValues)))
+			Expect(reflect.DeepEqual(expectedValues, values)).To(BeTrue())
 		})
 	})
 })
