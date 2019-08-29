@@ -235,6 +235,7 @@ const testFormInputPrompts = `Input Data Form for 'input-form'
 test group description
 
 CONFIGURATION DATA INPUT
+================================================================================
 
 description for group 1
 ================================================================================
@@ -280,4 +281,6 @@ Attrib 1312 - description for attrib1312.
 
 Attrib 14 - description for attrib14.
 --------------------------------------------------------------------------------
-<<value for attrib14`
+<<value for attrib14
+
+================================================================================`
