@@ -74,6 +74,7 @@ func (tf *TextForm) GetInput(
 	singleDivider = strings.Repeat("-", width)
 
 	tf.printFormHeader("", width)
+	fmt.Println(doubleDivider)
 	fmt.Println()
 
 	cursor = entry.NewInputCursor(tf.inputGroup)
@@ -145,13 +146,31 @@ func (tf *TextForm) GetInput(
 		}
 
 		line.SetCompleter(func(line string) []string {
+
+			var (
+				exists bool
+				envVal string
+			)
+
 			if acceptedValues := inputField.AcceptedValues(); acceptedValues == nil {
 				if value == nil {
 					return []string{}
 				} else {
 					// if a input has a value then return it as a completion
-					// value so the user can retrieve it by tabbing
-					return []string{*value, ""}
+					// value along with any new values from environment so
+					// the user can retrieve values by tabbing
+					acceptedValues := []string{""}
+					valueSet := map[string]bool{*value: true}
+
+					for _, e := range inputField.EnvVars() {
+						if envVal, exists = os.LookupEnv(e); exists {
+							if _, exists = valueSet[envVal]; !exists {
+								acceptedValues = append(acceptedValues, envVal)
+								valueSet[envVal] = true
+							}
+						}
+					}
+					return append(acceptedValues, *value)
 				}
 
 			} else {
@@ -180,6 +199,7 @@ func (tf *TextForm) GetInput(
 		cursor = cursor.NextInput()
 	}
 
+	fmt.Println(doubleDivider)
 	return nil
 }
 
@@ -284,7 +304,7 @@ func (tf *TextForm) printFormHeader(
 ) {
 	fmt.Print(padding)
 	fmt.Print(tf.title)
-	fmt.Print("\n")
+	fmt.Println()
 
 	fmt.Print(padding)
 	utils.RepeatString("=", len(tf.title), os.Stdout)
@@ -297,8 +317,7 @@ func (tf *TextForm) printFormHeader(
 	l := len(padding)
 	s, _ := utils.SplitString(tf.heading, l, width-l, true)
 	fmt.Print(s)
-
-	fmt.Print("\n")
+	fmt.Println()
 }
 
 func (tf *TextForm) getInputLongDescription(
