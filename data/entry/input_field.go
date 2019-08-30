@@ -120,6 +120,31 @@ func (f *InputField) EnvVars() []string {
 	return f.envVars
 }
 
+// out: whether value is sourced from a file
+// out: list of file paths to source from read from input field's
+//      environment variables. If this field has a value then
+//      this list will have an entry named [saved] along with
+//      the possible paths to load a new the value from.
+func (f *InputField) ValueFromFile() (bool, []string) {
+
+	paths := []string{}
+	if f.valueDeref() != nil {
+		paths = append(paths, "[saved]")
+	}
+	if len(f.envVars) > 0 {
+		// extract value from environment and if value
+		// is a valid path then add it to returned list
+		for _, e := range f.envVars {
+			if envVal, exists := os.LookupEnv(e); exists {
+				if fileInfo, err := os.Stat(envVal); err == nil && !fileInfo.IsDir() {
+					paths = append(paths, envVal)
+				}
+			}
+		}
+	}
+	return f.valueFromFile, paths
+}
+
 // out: the long description of the group
 func (f *InputField) LongDescription() string {
 
@@ -237,10 +262,15 @@ func (f *InputField) SetValueRef(valueRef interface{}) error {
 	return nil
 }
 
-// in: input value
+// in: value - input value to set
 func (f *InputField) SetValue(value *string) error {
 
 	var (
+		err error
+
+		buf  []byte
+		data string
+
 		ptrValue, ptrToValue reflect.Value
 	)
 
@@ -248,6 +278,19 @@ func (f *InputField) SetValue(value *string) error {
 		return fmt.Errorf("field '%s' has not been bound to a value instance", f.name)
 	}
 
+	if f.valueFromFile {
+		// extract value from file
+		if buf, err = ioutil.ReadFile(*value); err != nil {
+			return err
+		}
+
+		logger.TraceMessage(
+			"Value of input field '%s' has been sourced from file '%s'.",
+			f.name, *value)
+
+		data = string(buf)
+		value = &data
+	}
 	if f.acceptedValueSet != nil {
 		if _, ok := f.acceptedValueSet[*value]; !ok {
 			return fmt.Errorf(f.acceptedValuesErrorMessage)
@@ -299,43 +342,14 @@ func (f *InputField) InputSet() bool {
 }
 
 // out: the value of the input
-func (f *InputField) Value() (*string, error) {
+func (f *InputField) Value() *string {
 
 	var (
-		err error
-
-		ptrValue, ptrToValue reflect.Value
-		valueDeref, value    *string
-
-		buf  []byte
-		data string
+		value *string
 	)
-	value = nil
 
-	if f.hasValue {
-
-		ptrValue = reflect.ValueOf(f.valueRef)  // pointer to the pointer of the value object
-		ptrToValue = reflect.Indirect(ptrValue) // value object or pointer to the value object
-		if ptrToValue.Kind() == reflect.Ptr {
-			valueDeref = ptrToValue.Interface().(*string)
-		} else {
-			valueDeref = ptrValue.Interface().(*string)
-		}
-
-		if f.valueFromFile {
-
-			// extract value from file
-			if buf, err = ioutil.ReadFile(*valueDeref); err != nil {
-				return nil, err
-			}
-			data = string(buf)
-			value = &data
-
-		} else {
-			value = valueDeref
-		}
-
-	} else {
+	value = f.valueDeref()
+	if value == nil {
 		if len(f.envVars) > 0 {
 			// extract value from environment
 			for _, e := range f.envVars {
@@ -351,5 +365,25 @@ func (f *InputField) Value() (*string, error) {
 			}
 		}
 	}
-	return value, nil
+	return value
+}
+
+// out: dereference the value
+func (f *InputField) valueDeref() *string {
+
+	var (
+		ptrValue, ptrToValue reflect.Value
+	)
+
+	if f.hasValue {
+
+		ptrValue = reflect.ValueOf(f.valueRef)  // pointer to the pointer of the value object
+		ptrToValue = reflect.Indirect(ptrValue) // value object or pointer to the value object
+		if ptrToValue.Kind() == reflect.Ptr {
+			return ptrToValue.Interface().(*string)
+		} else {
+			return ptrValue.Interface().(*string)
+		}
+	}
+	return nil
 }

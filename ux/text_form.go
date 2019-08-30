@@ -61,6 +61,9 @@ func (tf *TextForm) GetInput(
 		response,
 		suggestion string
 		value *string
+
+		valueFromFile bool
+		filePaths     []string
 	)
 
 	line := liner.NewLiner()
@@ -119,11 +122,13 @@ func (tf *TextForm) GetInput(
 				// allow selection of options using tab
 				return options
 			})
-			if response, err = line.Prompt("Please select one of the above ? "); err != nil {
-				return err
-			}
-			if j, err = strconv.Atoi(response); err != nil {
-				return err
+			for {
+				if response, err = line.Prompt("Please select one of the above ? "); err != nil {
+					return err
+				}
+				if j, err = strconv.Atoi(response); err == nil {
+					break
+				}
 			}
 
 			fmt.Println(singleDivider)
@@ -141,9 +146,11 @@ func (tf *TextForm) GetInput(
 		}
 
 		inputField = input.(*entry.InputField)
-		if value, err = inputField.Value(); err != nil {
-			return err
-		}
+		value = inputField.Value()
+
+		// if value for the field is sourced from a file then
+		// the actual input will be source file name
+		valueFromFile, filePaths = inputField.ValueFromFile()
 
 		line.SetCompleter(func(line string) []string {
 
@@ -151,11 +158,12 @@ func (tf *TextForm) GetInput(
 				exists bool
 				envVal string
 			)
-
 			if acceptedValues := inputField.AcceptedValues(); acceptedValues == nil {
-				if value == nil {
-					return []string{}
-				} else {
+
+				if valueFromFile {
+					return filePaths
+
+				} else if value != nil {
 					// if a input has a value then return it as a completion
 					// value along with any new values from environment so
 					// the user can retrieve values by tabbing
@@ -171,6 +179,9 @@ func (tf *TextForm) GetInput(
 						}
 					}
 					return append(acceptedValues, *value)
+
+				} else {
+					return []string{}
 				}
 
 			} else {
@@ -183,6 +194,8 @@ func (tf *TextForm) GetInput(
 		// the current value as a suggestion as default
 		if value == nil {
 			suggestion = ""
+		} else if valueFromFile && len(filePaths) > 0 {
+			suggestion = filePaths[0]
 		} else {
 			suggestion = *value
 		}
@@ -191,8 +204,14 @@ func (tf *TextForm) GetInput(
 		}
 
 		// set input with entered value
-		if cursor, err = cursor.SetInput(input.Name(), response); err != nil {
-			return err
+		if valueFromFile && response == "[saved]" {
+			if cursor, err = cursor.SetDefaultInput(input.Name()); err != nil {
+				return err
+			}
+		} else {
+			if cursor, err = cursor.SetInput(input.Name(), response); err != nil {
+				return err
+			}
 		}
 
 		fmt.Println()
@@ -327,9 +346,9 @@ func (tf *TextForm) getInputLongDescription(
 	padding, bullet string,
 	indent, width int,
 ) string {
+
 	var (
-		err error
-		ok  bool
+		ok bool
 
 		out strings.Builder
 
@@ -357,7 +376,7 @@ func (tf *TextForm) getInputLongDescription(
 
 	if showDefaults {
 		if field, ok = input.(*entry.InputField); ok {
-			if value, err = field.Value(); value != nil && err == nil {
+			if value = field.Value(); value != nil {
 				out.WriteString("\n")
 				out.WriteString(padding)
 

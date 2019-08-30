@@ -165,7 +165,7 @@ var _ = Describe("Text Formatting tests", func() {
 				}
 			}
 
-			values, err := inputGroup.InputValues()
+			values := inputGroup.InputValues()
 			Expect(err).ToNot(HaveOccurred())
 			Expect(len(values)).To(Equal(len(expectedValues)))
 			Expect(reflect.DeepEqual(expectedValues, values)).To(BeTrue())

@@ -193,8 +193,7 @@ var _ = Describe("Input Collection", func() {
 			cursor, err = cursor.SetInput("attrib14", "value for attrib14")
 			Expect(err).ToNot(HaveOccurred())
 
-			values, err := ig.InputValues()
-			Expect(err).ToNot(HaveOccurred())
+			values := ig.InputValues()
 			Expect(len(values)).To(Equal(len(expectedValues)))
 			Expect(reflect.DeepEqual(expectedValues, values)).To(BeTrue())
 		})
@@ -242,8 +241,7 @@ var _ = Describe("Input Collection", func() {
 			cursor, err = cursor.SetDefaultInput("attrib14")
 			Expect(err).ToNot(HaveOccurred())
 
-			values, err := ig.InputValues()
-			Expect(err).ToNot(HaveOccurred())
+			values := ig.InputValues()
 			Expect(len(values)).To(Equal(len(expectedValues)))
 			Expect(reflect.DeepEqual(expectedValues, values)).To(BeTrue())
 		})
@@ -288,8 +286,7 @@ var _ = Describe("Input Collection", func() {
 			cursor, err = cursor.SetInput("attrib14", "value for attrib14")
 			Expect(err).ToNot(HaveOccurred())
 
-			values, err := ig.InputValues()
-			Expect(err).ToNot(HaveOccurred())
+			values := ig.InputValues()
 			Expect(len(values)).To(Equal(len(expectedValues)))
 			Expect(reflect.DeepEqual(expectedValues, values)).To(BeTrue())
 		})

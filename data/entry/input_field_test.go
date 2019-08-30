@@ -1,10 +1,10 @@
 package entry_test
 
 import (
-	. "github.com/onsi/ginkgo"
-	. "github.com/onsi/gomega"
 	"github.com/mevansam/goutils/data/entry"
 	test_data "github.com/mevansam/goutils/test/data"
+	. "github.com/onsi/ginkgo"
+	. "github.com/onsi/gomega"
 )
 
 var _ = Describe("Input Fields", func() {
@@ -69,53 +69,46 @@ var _ = Describe("Input Fields", func() {
 			Expect(err).NotTo(HaveOccurred())
 			err = field.SetValueRef(&data.attrib11)
 			Expect(err).NotTo(HaveOccurred())
-			value, err = field.Value()
-			Expect(err).NotTo(HaveOccurred())
+			value = field.Value()
 			Expect(*value).To(Equal("attrib11 #1"))
 
 			// value update in struct should reflect
 			// when retrieved via InputForm
 			attrib11Value = "attrib11 #2"
 			Expect(*data.attrib11).To(Equal("attrib11 #2"))
-			value, err = field.Value()
-			Expect(err).NotTo(HaveOccurred())
+			value = field.Value()
 			Expect(*value).To(Equal("attrib11 #2"))
 
 			// value update in input form
 			// should reflect in struct
 			newValue = "attrib11 #3"
 			err = field.SetValue(&newValue)
-			Expect(err).NotTo(HaveOccurred())
 			Expect(*data.attrib11).To(Equal("attrib11 #3"))
 
 			field, err = ig.GetInputField("attrib12")
 			Expect(err).NotTo(HaveOccurred())
 			err = field.SetValueRef(&data.attrib12)
 			Expect(err).NotTo(HaveOccurred())
-			value, err = field.Value()
-			Expect(err).NotTo(HaveOccurred())
+			value = field.Value()
 			Expect(*value).To(Equal("attrib12 #2"))
 
 			// value update in struct should reflect
 			// when retrieved via InputForm
 			data.attrib12 = "attrib12 #2"
-			value, err = field.Value()
-			Expect(err).NotTo(HaveOccurred())
+			value = field.Value()
 			Expect(*value).To(Equal("attrib12 #2"))
 
 			// value update in input form
 			// should reflect in struct
 			newValue = "attrib12 #3"
 			err = field.SetValue(&newValue)
-			Expect(err).NotTo(HaveOccurred())
 			Expect(data.attrib12).To(Equal("attrib12 #3"))
 
 			field, err = ig.GetInputField("attrib13")
 			Expect(err).NotTo(HaveOccurred())
 			err = field.SetValueRef(&data.attrib13)
 			Expect(err).NotTo(HaveOccurred())
-			value, err = field.Value()
-			Expect(err).NotTo(HaveOccurred())
+			value = field.Value()
 			Expect(value).To(BeNil())
 
 			// value update in input form
@@ -126,16 +119,14 @@ var _ = Describe("Input Fields", func() {
 			Expect(*data.attrib13).To(Equal("attrib13 #1"))
 
 			data.attrib13 = nil
-			value, err = field.Value()
-			Expect(err).NotTo(HaveOccurred())
+			value = field.Value()
 			Expect(value).To(BeNil())
 
 			// value update in struct should reflect
 			// when retrieved via InputForm
 			newValue = "attrib13 #2"
 			data.attrib13 = &newValue
-			value, err = field.Value()
-			Expect(err).NotTo(HaveOccurred())
+			value = field.Value()
 			Expect(*value).To(Equal("attrib13 #2"))
 		})
 	})

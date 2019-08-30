@@ -40,7 +40,7 @@ type InputForm interface {
 	SetFieldValue(name string, value string) error
 
 	InputFields() []*InputField
-	InputValues() (map[string]string, error)
+	InputValues() map[string]string
 }
 
 // This structure is a container for a collection of
@@ -492,7 +492,7 @@ func (g *InputGroup) GetFieldValue(name string) (*string, error) {
 	if field, err = g.GetInputField(name); err != nil {
 		return nil, err
 	}
-	return field.Value()
+	return field.Value(), nil
 }
 
 // in: the name of the input field to set the value of
@@ -539,10 +539,9 @@ func (g *InputGroup) inputFields(added map[string]bool) []*InputField {
 }
 
 // out: map of name-values of all inputs entered
-func (g *InputGroup) InputValues() (map[string]string, error) {
+func (g *InputGroup) InputValues() map[string]string {
 
 	var (
-		err error
 		val *string
 	)
 
@@ -551,12 +550,9 @@ func (g *InputGroup) InputValues() (map[string]string, error) {
 
 	for _, f := range inputFields {
 		if f.InputSet() {
-
-			if val, err = f.Value(); err != nil {
-				return nil, err
-			}
+			val = f.Value()
 			valueMap[f.Name()] = *val
 		}
 	}
-	return valueMap, nil
+	return valueMap
 }
