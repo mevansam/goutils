@@ -213,6 +213,9 @@ func (tf *TextForm) GetInput(
 				return err
 			}
 		}
+		if valueFromFile {
+			fmt.Printf("Value from file: \n%s\n", *inputField.Value())
+		}
 
 		fmt.Println()
 		cursor = cursor.NextInput()
