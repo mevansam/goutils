@@ -1,7 +1,11 @@
 package entry
 
 import (
+	"encoding/json"
 	"fmt"
+	"regexp"
+
+	"github.com/mevansam/goutils/utils"
 )
 
 // Input types
@@ -34,6 +38,9 @@ type Input interface {
 type InputForm interface {
 	Input
 
+	AddFieldValueHint(name, hint string) error
+	GetFieldValueHints(name string) []string
+
 	GetInputField(name string) (*InputField, error)
 
 	GetFieldValue(name string) (*string, error)
@@ -56,7 +63,12 @@ type InputGroup struct {
 
 	containers   map[int]*InputGroup
 	fieldNameSet map[string]Input
+
+	fieldValueLookupHints map[string][]string
 }
+
+// Regex used to validate hints
+var hintRegex = regexp.MustCompile(`^(https?:\/\/|file:\/\/\/?|field:\/\/)([a-z0-9]+([\-\.]{1}[a-z0-9]+)*(\.[a-z]{2,5})*(:[0-9]{1,5})?)(\/.*)?$`)
 
 // in: name        - name of the container
 // in: displayName - the name to display when requesting input
@@ -77,6 +89,8 @@ func (g *InputGroup) NewInputContainer(
 
 		containers:   g.containers,
 		fieldNameSet: g.fieldNameSet,
+
+		fieldValueLookupHints: g.fieldValueLookupHints,
 	}
 	g.containers[groupId] = container
 
@@ -304,6 +318,8 @@ func (g *InputGroup) newInputField(
 
 			containers:   g.containers,
 			fieldNameSet: g.fieldNameSet,
+
+			fieldValueLookupHints: g.fieldValueLookupHints,
 		},
 		inputType: inputType,
 
@@ -460,6 +476,91 @@ func (g *InputGroup) getGroupId() int {
 }
 
 // interface: InputForm
+
+// in: name - name of the field for which a hint should be added
+// in: hint - the hint which is a URL with the following patterns.
+//            * http://<url> - a http url from which source a list values separated by newlines
+//            * file://<path> - a path to a file from which to source a list values separated by newlines
+//            * field://<name>/<path> - a path to a value in a field with json content
+func (g *InputGroup) AddFieldValueHint(name, hint string) error {
+
+	var (
+		exists bool
+		hints  []string
+	)
+
+	if !hintRegex.Match([]byte(hint)) {
+		return fmt.Errorf("hint must be a url with prefix http(s)://, file:// or field://")
+	}
+	if _, exists = g.fieldNameSet[name]; exists {
+		if hints, exists = g.fieldValueLookupHints[name]; !exists {
+			hints = []string{}
+			g.fieldValueLookupHints[name] = hints
+		}
+		g.fieldValueLookupHints[name] = append(hints, hint)
+		return nil
+	}
+	return fmt.Errorf("field with name '%s' not found", name)
+}
+
+// in: name - name of the field for which a hint should be retrieved
+// out: array of hint values
+func (g *InputGroup) GetFieldValueHints(name string) ([]string, error) {
+
+	var (
+		err   error
+		value *string
+
+		fieldData interface{}
+		hintData  interface{}
+	)
+
+	hintValues := []string{}
+	if hints := g.fieldValueLookupHints[name]; hints != nil && len(hints) > 0 {
+
+		for _, hint := range hints {
+			matchIndices := hintRegex.FindAllStringSubmatchIndex(hint, -1)
+			protocol := hint[matchIndices[0][2]:matchIndices[0][3]]
+
+			switch protocol {
+			case "http//", "https//":
+				// not implemented
+				err = fmt.Errorf("not implemented")
+			case "file://", "file:///":
+				// not implemented
+				err = fmt.Errorf("not implemented")
+			case "field://":
+
+				fieldName := hint[matchIndices[0][4]:matchIndices[0][5]]
+				fieldPath := hint[matchIndices[0][12]:matchIndices[0][13]]
+
+				if value, err = g.GetFieldValue(fieldName); err == nil && value != nil {
+
+					if err = json.Unmarshal([]byte(*value), &fieldData); err == nil {
+						if hintData, err = utils.GetValueAtPath(fieldPath, fieldData); err == nil {
+
+							switch hintData.(type) {
+							case string:
+								hintValues = append(hintValues, hintData.(string))
+							case []interface{}:
+								for _, v := range hintData.([]interface{}) {
+									hintValues = append(hintValues, fmt.Sprintf("%v", v))
+								}
+							default:
+								hintValues = append(hintValues, fmt.Sprintf("%v", hintData))
+							}
+						}
+					} else {
+						err = fmt.Errorf(
+							"error parsing json value of field '%s': %s",
+							fieldName, err.Error())
+					}
+				}
+			}
+		}
+	}
+	return hintValues, err
+}
 
 // in: the name of the input field to retrieve
 // out: the input field with the given name

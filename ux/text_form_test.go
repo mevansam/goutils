@@ -57,7 +57,7 @@ var _ = Describe("Text Formatting tests", func() {
 
 	Context("Output", func() {
 
-		It("outputs a detailed input data form reference", func() {
+		FIt("outputs a detailed input data form reference", func() {
 
 			// channel to signal when getting form input is done
 			out := make(chan string)
@@ -221,11 +221,12 @@ const testFormReferenceOutput = `  Input Data Form for 'input-form'
 
       description for group 3
 
-      * Attrib 132 - description for attrib131.
+      * Attrib 132 - description for attrib132. It will be sourced from the
+                     environment variable ATTRIB132 if not provided.
 
       OR
 
-      * Attrib 133 - description for attrib131.
+      * Attrib 133 - description for attrib133.
 
   * Attrib 14 - description for attrib14.`
 

@@ -22,6 +22,8 @@ func (ic *InputCollection) NewGroup(
 
 		containers:   make(map[int]*InputGroup),
 		fieldNameSet: make(map[string]Input),
+
+		fieldValueLookupHints: make(map[string][]string),
 	}
 	ic.groups[name] = ig
 	return ig

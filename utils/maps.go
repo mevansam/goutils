@@ -111,7 +111,11 @@ func getValueRefAtPath(keyPath []string, valueMap interface{}) (interface{}, err
 // in: valueMap - nested map of maps to lookup key in
 // out: the value at the given path
 func GetValueAtPath(keyPath string, valueMap interface{}) (interface{}, error) {
-	return getValueAtPath(strings.Split(keyPath, "/"), valueMap)
+	if strings.HasPrefix(keyPath, "/") {
+		return getValueAtPath(strings.Split(keyPath[1:], "/"), valueMap)
+	} else {
+		return getValueAtPath(strings.Split(keyPath, "/"), valueMap)
+	}
 }
 
 func getValueAtPath(keyPath []string, valueMap interface{}) (interface{}, error) {

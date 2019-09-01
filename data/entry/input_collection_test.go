@@ -253,7 +253,7 @@ var _ = Describe("Input Collection", func() {
 				"attrib131":  "value for attrib131",
 				"attrib1311": "value for attrib1311",
 				"attrib1312": "value for attrib1312",
-				"attrib132":  "value for attrib132 from file",
+				"attrib132":  `{"attrib132":"value for attrib132 from file"}`,
 				"attrib14":   "value for attrib14",
 			}
 

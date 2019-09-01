@@ -139,18 +139,18 @@ func NewTestInputCollection() *entry.InputCollection {
 	_, err = ig.NewInputGroupField(
 		/* name */ "attrib132",
 		/* displayName */ "Attrib 132",
-		/* description */ "description for attrib131.",
+		/* description */ "description for attrib132.",
 		/* groupId */ 3,
 		/* inputType */ entry.String,
 		/* valueFromFile */ true,
-		/* envVars */ []string{},
+		/* envVars */ []string{"ATTRIB132"},
 		/* dependsOn */ []string{"attrib13"},
 	)
 	Expect(err).NotTo(HaveOccurred())
 	_, err = ig.NewInputGroupFieldWithDefaultValue(
 		/* name */ "attrib133",
 		/* displayName */ "Attrib 133",
-		/* description */ "description for attrib131.",
+		/* description */ "description for attrib133.",
 		/* groupId */ 3,
 		/* inputType */ entry.String,
 		/* valueFromFile */ false,
