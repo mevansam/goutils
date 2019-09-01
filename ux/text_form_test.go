@@ -57,7 +57,7 @@ var _ = Describe("Text Formatting tests", func() {
 
 	Context("Output", func() {
 
-		FIt("outputs a detailed input data form reference", func() {
+		It("outputs a detailed input data form reference", func() {
 
 			// channel to signal when getting form input is done
 			out := make(chan string)

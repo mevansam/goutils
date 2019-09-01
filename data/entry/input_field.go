@@ -128,9 +128,6 @@ func (f *InputField) EnvVars() []string {
 func (f *InputField) ValueFromFile() (bool, []string) {
 
 	paths := []string{}
-	if f.valueDeref() != nil {
-		paths = append(paths, "[saved]")
-	}
 	if len(f.envVars) > 0 {
 		// extract value from environment and if value
 		// is a valid path then add it to returned list
@@ -349,7 +346,7 @@ func (f *InputField) Value() *string {
 	)
 
 	value = f.valueDeref()
-	if value == nil {
+	if value == nil && !f.valueFromFile {
 		if len(f.envVars) > 0 {
 			// extract value from environment
 			for _, e := range f.envVars {

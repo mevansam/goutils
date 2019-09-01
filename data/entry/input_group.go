@@ -39,7 +39,7 @@ type InputForm interface {
 	Input
 
 	AddFieldValueHint(name, hint string) error
-	GetFieldValueHints(name string) []string
+	GetFieldValueHints(name string) ([]string, error)
 
 	GetInputField(name string) (*InputField, error)
 

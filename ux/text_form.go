@@ -9,6 +9,7 @@ import (
 	"github.com/peterh/liner"
 
 	"github.com/mevansam/goutils/data/entry"
+	"github.com/mevansam/goutils/logger"
 	"github.com/mevansam/goutils/utils"
 )
 
@@ -47,9 +48,8 @@ func (tf *TextForm) GetInput(
 ) error {
 
 	var (
-		err error
-
-		doubleDivider, singleDivider string
+		err    error
+		exists bool
 
 		nameLen, l, j int
 
@@ -57,13 +57,16 @@ func (tf *TextForm) GetInput(
 		inputField *entry.InputField
 		input      entry.Input
 
-		prompt,
-		response,
-		suggestion string
+		doubleDivider, singleDivider,
+		prompt, response, suggestion,
+		envVal string
+
 		value *string
 
 		valueFromFile bool
-		filePaths     []string
+		filePaths,
+		hintValues,
+		fieldHintValues []string
 	)
 
 	line := liner.NewLiner()
@@ -148,57 +151,73 @@ func (tf *TextForm) GetInput(
 		inputField = input.(*entry.InputField)
 		value = inputField.Value()
 
-		// if value for the field is sourced from a file then
-		// the actual input will be source file name
 		valueFromFile, filePaths = inputField.ValueFromFile()
+		if valueFromFile {
 
-		line.SetCompleter(func(line string) []string {
+			// if value for the field is sourced from a file then
+			// create a list of auto-completion hints with default
+			// values from the environment
+			if value != nil {
+				hintValues = append(filePaths, []string{"", "[saved]"}...)
+			} else {
+				hintValues = append(filePaths, "")
+			}
+			suggestion = hintValues[len(hintValues)-1]
 
-			var (
-				exists bool
-				envVal string
-			)
-			if acceptedValues := inputField.AcceptedValues(); acceptedValues == nil {
+		} else {
 
-				if valueFromFile {
-					return filePaths
-
-				} else if value != nil {
-					// if a input has a value then return it as a completion
-					// value along with any new values from environment so
-					// the user can retrieve values by tabbing
-					acceptedValues := []string{""}
-					valueSet := map[string]bool{*value: true}
-
-					for _, e := range inputField.EnvVars() {
-						if envVal, exists = os.LookupEnv(e); exists {
-							if _, exists = valueSet[envVal]; !exists {
-								acceptedValues = append(acceptedValues, envVal)
-								valueSet[envVal] = true
-							}
-						}
-					}
-					return append(acceptedValues, *value)
-
+			if values := inputField.AcceptedValues(); values != nil {
+				// if values are restrcted to a given list then
+				// create a list of auto-completion hints only
+				// with those values
+				hintValues = append(*values)
+				if value != nil {
+					suggestion = *value
 				} else {
-					return []string{}
+					suggestion = ""
 				}
 
 			} else {
-				// if input has a list of accepted values then allow completion on those values
-				return *acceptedValues
-			}
-		})
+				// create a list of auto-completion hints from
+				// the environment variable associated with the
+				// input field along with any values retrieved
+				// from any field hints set in the input group.
+				hintValues = []string{}
 
-		// if input already has a value then prompt with
-		// the current value as a suggestion as default
-		if value == nil {
-			suggestion = ""
-		} else if valueFromFile && len(filePaths) > 0 {
-			suggestion = filePaths[0]
-		} else {
-			suggestion = *value
+				// set of added values used to ensure
+				// the same values are not added twice
+				valueSet := map[string]bool{"": true}
+				if value != nil && len(*value) > 0 {
+					valueSet[*value] = true
+				}
+
+				// add values sourced from environment to completion list
+				for _, e := range inputField.EnvVars() {
+					if envVal, exists = os.LookupEnv(e); exists {
+						if _, exists = valueSet[envVal]; !exists {
+							hintValues = append(hintValues, envVal)
+							valueSet[envVal] = true
+						}
+					}
+				}
+
+				// add values sourced from hints to completion list
+				if fieldHintValues, err = tf.inputGroup.GetFieldValueHints(input.Name()); err != nil {
+					logger.DebugMessage(
+						"Error retrieving hint values for field '%s': '%s'",
+						input.Name(), err.Error())
+				}
+				hintValues = append(append(hintValues, fieldHintValues...), "")
+				if value != nil {
+					hintValues = append(hintValues, *value)
+				}
+				suggestion = hintValues[len(hintValues)-1]
+			}
 		}
+
+		line.SetCompleter(func(line string) []string {
+			return hintValues
+		})
 		if response, err = line.PromptWithSuggestion(prompt, suggestion, -1); err != nil {
 			return err
 		}
