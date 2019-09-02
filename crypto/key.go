@@ -4,6 +4,8 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"io"
+
+	"github.com/mevansam/goutils/logger"
 )
 
 // in: len - the length of the key to generate
@@ -25,6 +27,10 @@ func RandomKey(len int) ([]byte, error) {
 // in: seed - a seed value used to scramble the returned key hash
 // out: a 32 byte key hash of the passphrase
 func KeyFromPassphrase(passphrase string, seed int64) []byte {
+
+	logger.TraceMessage(
+		"Creating key using passphrase '%s' and seed '%d'.",
+		passphrase, seed)
 
 	key := sha256.Sum256([]byte(passphrase))
 	if seed != int64(0) {
