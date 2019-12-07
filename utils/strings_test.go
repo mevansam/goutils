@@ -1,9 +1,10 @@
 package utils_test
 
 import (
+	"github.com/mevansam/goutils/utils"
+
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
-	"github.com/mevansam/goutils/utils"
 )
 
 var _ = Describe("string utils tests", func() {
