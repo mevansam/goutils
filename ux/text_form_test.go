@@ -9,7 +9,7 @@ import (
 	"reflect"
 	"strings"
 
-	"github.com/mevansam/goutils/data/entry"
+	"github.com/mevansam/goutils/forms"
 
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
@@ -17,7 +17,7 @@ import (
 	"github.com/mevansam/goutils/logger"
 	"github.com/mevansam/goutils/ux"
 
-	test_data "github.com/mevansam/goutils/test/data"
+	test_data "github.com/mevansam/goutils/test/forms"
 )
 
 var _ = Describe("Text Formatting tests", func() {
@@ -96,7 +96,7 @@ var _ = Describe("Text Formatting tests", func() {
 	Context("Input", func() {
 
 		var (
-			inputGroup *entry.InputGroup
+			inputGroup *forms.InputGroup
 		)
 
 		BeforeEach(func() {

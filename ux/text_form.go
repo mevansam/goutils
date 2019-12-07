@@ -8,7 +8,7 @@ import (
 
 	"github.com/peterh/liner"
 
-	"github.com/mevansam/goutils/data/entry"
+	"github.com/mevansam/goutils/forms"
 	"github.com/mevansam/goutils/logger"
 	"github.com/mevansam/goutils/utils"
 )
@@ -17,21 +17,21 @@ type TextForm struct {
 	title,
 	heading string
 
-	inputGroup *entry.InputGroup
+	inputGroup *forms.InputGroup
 }
 
 func NewTextForm(
 	title, heading string,
-	input entry.Input,
+	input forms.Input,
 ) (*TextForm, error) {
 
 	var (
 		ok         bool
-		inputGroup *entry.InputGroup
+		inputGroup *forms.InputGroup
 	)
 
-	if inputGroup, ok = input.(*entry.InputGroup); !ok {
-		return nil, fmt.Errorf("input is not of type entry.InputGroup: %#v", input)
+	if inputGroup, ok = input.(*forms.InputGroup); !ok {
+		return nil, fmt.Errorf("input is not of type forms.InputGroup: %#v", input)
 	}
 
 	return &TextForm{
@@ -53,9 +53,9 @@ func (tf *TextForm) GetInput(
 
 		nameLen, l, j int
 
-		cursor     *entry.InputCursor
-		inputField *entry.InputField
-		input      entry.Input
+		cursor     *forms.InputCursor
+		inputField *forms.InputField
+		input      forms.Input
 
 		doubleDivider, singleDivider,
 		prompt, response, suggestion,
@@ -83,7 +83,7 @@ func (tf *TextForm) GetInput(
 	fmt.Println(doubleDivider)
 	fmt.Println()
 
-	cursor = entry.NewInputCursor(tf.inputGroup)
+	cursor = forms.NewInputCursor(tf.inputGroup)
 	cursor = cursor.NextInput()
 
 	for cursor != nil {
@@ -91,7 +91,7 @@ func (tf *TextForm) GetInput(
 			return err
 		}
 
-		if input.Type() == entry.Container {
+		if input.Type() == forms.Container {
 
 			fmt.Println(input.Description())
 			fmt.Println(doubleDivider)
@@ -148,7 +148,7 @@ func (tf *TextForm) GetInput(
 			prompt = ": "
 		}
 
-		inputField = input.(*entry.InputField)
+		inputField = input.(*forms.InputField)
 		value = inputField.Value()
 
 		valueFromFile, filePaths = inputField.ValueFromFile()
@@ -251,7 +251,7 @@ func (tf *TextForm) ShowInputReference(
 
 	var (
 		padding    string
-		printInput func(level int, input entry.Input)
+		printInput func(level int, input forms.Input)
 
 		fieldLengths map[string]*int
 	)
@@ -261,18 +261,18 @@ func (tf *TextForm) ShowInputReference(
 	fieldLengths = make(map[string]*int)
 	tf.calcNameLengths(tf.inputGroup, fieldLengths, nil, true)
 
-	printInput = func(level int, input entry.Input) {
+	printInput = func(level int, input forms.Input) {
 
 		var (
 			levelIndent string
 
-			inputs []entry.Input
-			ii     entry.Input
+			inputs []forms.Input
+			ii     forms.Input
 			i, l   int
 		)
 
 		fmt.Println()
-		if input.Type() == entry.Container {
+		if input.Type() == forms.Container {
 
 			// output description of a group of
 			// inputs which are mutually exclusive
@@ -301,7 +301,7 @@ func (tf *TextForm) ShowInputReference(
 		inputs = input.Inputs()
 		for i, ii = range inputs {
 
-			if input.Type() == entry.Container {
+			if input.Type() == forms.Container {
 				if i > 0 {
 					fmt.Print("\n\n")
 					fmt.Print(padding)
@@ -313,13 +313,13 @@ func (tf *TextForm) ShowInputReference(
 				printInput(level+1, ii)
 
 			} else {
-				if ii.Type() == entry.Container {
+				if ii.Type() == forms.Container {
 					fmt.Print("\n")
 				}
 				printInput(level, ii)
 			}
 		}
-		if input.Type() == entry.Container {
+		if input.Type() == forms.Container {
 
 			inputs = ii.Inputs()
 			l = len(inputs)
@@ -327,7 +327,7 @@ func (tf *TextForm) ShowInputReference(
 			// end group with new line. handle case where if last input
 			// also had a container at the end of its inputs two newlines
 			// will be outputwhen only on newline should have been output
-			if l == 0 || inputs[l-1].Type() != entry.Container {
+			if l == 0 || inputs[l-1].Type() != forms.Container {
 				fmt.Print("\n")
 			}
 		}
@@ -362,7 +362,7 @@ func (tf *TextForm) printFormHeader(
 }
 
 func (tf *TextForm) getInputLongDescription(
-	input entry.Input,
+	input forms.Input,
 	showDefaults bool,
 	nameLen int,
 	padding, bullet string,
@@ -377,7 +377,7 @@ func (tf *TextForm) getInputLongDescription(
 		name string
 		l    int
 
-		field        *entry.InputField
+		field        *forms.InputField
 		value        *string
 		defaultValue string
 	)
@@ -397,7 +397,7 @@ func (tf *TextForm) getInputLongDescription(
 	out.WriteString(description)
 
 	if showDefaults {
-		if field, ok = input.(*entry.InputField); ok {
+		if field, ok = input.(*forms.InputField); ok {
 			if value = field.Value(); value != nil {
 				out.WriteString("\n")
 				out.WriteString(padding)
@@ -418,7 +418,7 @@ func (tf *TextForm) getInputLongDescription(
 }
 
 func (tf *TextForm) calcNameLengths(
-	input entry.Input,
+	input forms.Input,
 	fieldLengths map[string]*int,
 	length *int,
 	isRoot bool,
@@ -431,9 +431,9 @@ func (tf *TextForm) calcNameLengths(
 
 	for _, i := range input.Inputs() {
 
-		if i.Type() != entry.Container {
+		if i.Type() != forms.Container {
 
-			if !isRoot && input.Type() == entry.Container {
+			if !isRoot && input.Type() == forms.Container {
 				// reset length for each input in a container
 				ll := 0
 				length = &ll

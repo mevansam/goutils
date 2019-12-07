@@ -2,13 +2,13 @@ package mocks
 
 import (
 	"github.com/mevansam/goutils/config"
-	"github.com/mevansam/goutils/data/entry"
+	"github.com/mevansam/goutils/forms"
 
 	. "github.com/onsi/gomega"
 )
 
 type FakeConfig struct {
-	inputGroup *entry.InputGroup
+	inputGroup *forms.InputGroup
 	values     map[string]*valueRef
 }
 
@@ -18,7 +18,7 @@ type valueRef struct {
 
 func (f *FakeConfig) InitConfig(name, description string) {
 
-	f.inputGroup = entry.
+	f.inputGroup = forms.
 		NewInputCollection().
 		NewGroup(name, description)
 	f.values = make(map[string]*valueRef)
@@ -35,7 +35,7 @@ func (f *FakeConfig) AddInputField(
 	var (
 		err error
 
-		field entry.Input
+		field forms.Input
 	)
 
 	if len(defaultValue) == 0 {
@@ -43,7 +43,7 @@ func (f *FakeConfig) AddInputField(
 			name,
 			displayName,
 			description,
-			entry.String,
+			forms.String,
 			false,
 			envVars,
 			[]string{},
@@ -55,7 +55,7 @@ func (f *FakeConfig) AddInputField(
 			name,
 			displayName,
 			description,
-			entry.String,
+			forms.String,
 			false,
 			defaultValue,
 			envVars,
@@ -67,7 +67,7 @@ func (f *FakeConfig) AddInputField(
 	v := valueRef{nil}
 	f.values[name] = &v
 
-	err = field.(*entry.InputField).SetValueRef(&v.value)
+	err = field.(*forms.InputField).SetValueRef(&v.value)
 	Expect(err).NotTo(HaveOccurred())
 }
 
@@ -81,7 +81,7 @@ func (f *FakeConfig) GetInternalValue(name string) (*string, bool) {
 	return v.value, exists
 }
 
-func (f *FakeConfig) InputForm() (entry.InputForm, error) {
+func (f *FakeConfig) InputForm() (forms.InputForm, error) {
 	return f.inputGroup, nil
 }
 

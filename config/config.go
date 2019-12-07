@@ -1,7 +1,7 @@
 package config
 
 import (
-	"github.com/mevansam/goutils/data/entry"
+	"github.com/mevansam/goutils/forms"
 )
 
 type Configurable interface {
@@ -11,7 +11,7 @@ type Configurable interface {
 	Description() string
 
 	// the configuration form
-	InputForm() (entry.InputForm, error)
+	InputForm() (forms.InputForm, error)
 
 	// retrieves the value of a key in the form. this will search
 	// all groups within the form for the given key and will return
