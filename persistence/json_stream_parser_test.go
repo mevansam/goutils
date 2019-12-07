@@ -3,11 +3,11 @@ package persistence_test
 import (
 	"strings"
 
+	"github.com/mevansam/goutils/logger"
+	"github.com/mevansam/goutils/persistence"
+
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
-	"github.com/mevansam/goutils/data/collections"
-	"github.com/mevansam/goutils/data/persistence"
-	"github.com/mevansam/goutils/logger"
 )
 
 var _ = Describe("json stream parser tests", func() {
@@ -150,63 +150,63 @@ var _ = Describe("json stream parser tests", func() {
 
 		It("unmarshalls a json stream to a map", func() {
 
-			expectedData := collections.Map{
-				"nested_key_1": collections.Map{
+			expectedData := persistence.Map{
+				"nested_key_1": persistence.Map{
 					"key1": "value1",
-					"array_key1": collections.Array{
+					"array_key1": persistence.Array{
 						"array_value11",
 						"array_value12",
 						"array_value13",
 					},
 					"key2": "value2",
-					"nested_key_2": collections.Map{
+					"nested_key_2": persistence.Map{
 						"key3": "value3",
 						"key4": "value4",
 					},
 				},
-				"array_key2": collections.Array{
-					collections.Map{
+				"array_key2": persistence.Array{
+					persistence.Map{
 						"key5": "value5",
-						"array_key3": collections.Array{
+						"array_key3": persistence.Array{
 							float64(11),
 							float64(22),
 							float64(33),
 						},
 						"key6": "value6",
 					},
-					collections.Map{
+					persistence.Map{
 						"key7": "value7",
-						"array_key4": collections.Array{
-							collections.Map{
+						"array_key4": persistence.Array{
+							persistence.Map{
 								"key8": "value8",
 								"key9": "value9",
 							},
 							"array_value14",
-							collections.Map{
+							persistence.Map{
 								"key10": "value10",
 							},
 						},
-						"nested_key_3": collections.Map{
+						"nested_key_3": persistence.Map{
 							"key11": "value11",
 							"key12": "value12",
 							"key13": "value13",
 						},
 					},
 				},
-				"array_key5": collections.Array{
-					collections.Array{
+				"array_key5": persistence.Array{
+					persistence.Array{
 						float64(0),
 						float64(1),
 						float64(2),
 					},
-					collections.Array{
+					persistence.Array{
 						float64(3),
 						float64(4),
 						float64(5),
 						float64(6),
 						float64(7),
 					},
-					collections.Array{
+					persistence.Array{
 						float64(8),
 						float64(9),
 					},
@@ -219,7 +219,7 @@ var _ = Describe("json stream parser tests", func() {
 				unmarshalledData persistence.Unmarshaller
 			)
 
-			parser := persistence.NewJSONStreamParser(collections.NewMap())
+			parser := persistence.NewJSONStreamParser(persistence.NewMap())
 			unmarshalledData, err = parser.Parse(strings.NewReader(jsonDocument))
 			Expect(err).ToNot(HaveOccurred())
 			logger.TraceMessage("unmarshalled data: %# v", unmarshalledData)

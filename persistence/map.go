@@ -1,9 +1,7 @@
-package collections
+package persistence
 
 import (
 	"fmt"
-
-	"github.com/mevansam/goutils/data/persistence"
 )
 
 type Map map[string]interface{}
@@ -15,26 +13,26 @@ func NewMap() Map {
 func (m Map) Unmarshal(
 	path []string,
 	key string,
-	elemType persistence.ElementType,
+	elemType ElementType,
 	value interface{},
 ) (
-	persistence.Unmarshaller,
-	persistence.Unmarshaller,
+	Unmarshaller,
+	Unmarshaller,
 	error,
 ) {
 
 	switch elemType {
-	case persistence.EtObject:
+	case EtObject:
 		mm := NewMap()
 		m[key] = mm
 		return mm, m, nil
 
-	case persistence.EtArray:
+	case EtArray:
 		aa := NewArray()
 		m[key] = aa
 		return aa, m, nil
 
-	case persistence.EtValue:
+	case EtValue:
 		m[key] = value
 
 	default:
@@ -47,7 +45,7 @@ func (m Map) Unmarshal(
 func (m Map) Finalize(
 	path []string,
 	key string,
-	node persistence.Unmarshaller,
+	node Unmarshaller,
 ) error {
 
 	var (
