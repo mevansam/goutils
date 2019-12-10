@@ -23,7 +23,7 @@ func TestData(t *testing.T) {
 	workingDirectory = path.Dir(filename)
 
 	RegisterFailHandler(Fail)
-	RunSpecs(t, "data entry")
+	RunSpecs(t, "forms")
 }
 
 var _ = AfterSuite(func() {

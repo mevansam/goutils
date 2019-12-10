@@ -1,19 +1,20 @@
-package persistence_test
+package run_test
 
 import (
 	"testing"
 
 	"github.com/mevansam/goutils/logger"
+	"github.com/onsi/gomega/gexec"
+
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
-	"github.com/onsi/gomega/gexec"
 )
 
-func TestData(t *testing.T) {
+func TestUtils(t *testing.T) {
 	logger.Initialize()
 
 	RegisterFailHandler(Fail)
-	RunSpecs(t, "persistence")
+	RunSpecs(t, "run")
 }
 
 var _ = AfterSuite(func() {

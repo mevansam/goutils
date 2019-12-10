@@ -1,4 +1,4 @@
-package utils_test
+package run_test
 
 import (
 	"io"
@@ -7,17 +7,17 @@ import (
 	"runtime"
 	"strings"
 
-	"github.com/onsi/ginkgo"
+	"github.com/mevansam/goutils/run"
+
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
-	"github.com/mevansam/goutils/utils"
 )
 
 var _ = Describe("CLI unit tests", func() {
 
 	var (
 		err error
-		cli utils.CLI
+		cli run.CLI
 
 		outputBuffer, errorBuffer strings.Builder
 
@@ -43,25 +43,25 @@ var _ = Describe("CLI unit tests", func() {
 		})
 
 		It("CLI path not found error", func() {
-			_, err = utils.NewCLI("/usr/bin/i-do-not-exist", "/tmp", &outputBuffer, &errorBuffer)
+			_, err = run.NewCLI("/usr/bin/i-do-not-exist", "/tmp", &outputBuffer, &errorBuffer)
 			Expect(err).To(HaveOccurred())
 			Expect(err.Error()).To(BeEquivalentTo("binary not found at '/usr/bin/i-do-not-exist'"))
 		})
 
 		It("CLI is not an executable error", func() {
-			_, err = utils.NewCLI(nonExecutableFile, workingDirectory, &outputBuffer, &errorBuffer)
+			_, err = run.NewCLI(nonExecutableFile, workingDirectory, &outputBuffer, &errorBuffer)
 			Expect(err).To(HaveOccurred())
 			Expect(err.Error()).To(BeEquivalentTo("binary at '" + nonExecutableFile + "' is not executable"))
 		})
 
 		It("invalid working directory path error", func() {
-			_, err = utils.NewCLI("/usr/bin/env", "/i-do-not-exist", &outputBuffer, &errorBuffer)
+			_, err = run.NewCLI("/usr/bin/env", "/i-do-not-exist", &outputBuffer, &errorBuffer)
 			Expect(err).To(HaveOccurred())
 			Expect(err.Error()).To(BeEquivalentTo("working directory not found at '/i-do-not-exist'"))
 		})
 
 		It("invalid working directory path error", func() {
-			_, err = utils.NewCLI("/usr/bin/env", nonExecutableFile, &outputBuffer, &errorBuffer)
+			_, err = run.NewCLI("/usr/bin/env", nonExecutableFile, &outputBuffer, &errorBuffer)
 			Expect(err).To(HaveOccurred())
 			Expect(err.Error()).To(BeEquivalentTo("working directory '" + nonExecutableFile + "' is not a directory"))
 		})
@@ -83,7 +83,7 @@ var _ = Describe("CLI unit tests", func() {
 		})
 
 		It("runs cli which returns an error", func() {
-			cli, err = utils.NewCLI(which, workingDirectory, &outputBuffer, &errorBuffer)
+			cli, err = run.NewCLI(which, workingDirectory, &outputBuffer, &errorBuffer)
 			Expect(err).NotTo(HaveOccurred())
 
 			err = cli.Run([]string{})
@@ -91,7 +91,7 @@ var _ = Describe("CLI unit tests", func() {
 		})
 
 		It("runs cli with and arg", func() {
-			cli, err = utils.NewCLI(which, workingDirectory, &outputBuffer, &errorBuffer)
+			cli, err = run.NewCLI(which, workingDirectory, &outputBuffer, &errorBuffer)
 			Expect(err).NotTo(HaveOccurred())
 
 			err = cli.Run([]string{"env"})
@@ -100,7 +100,7 @@ var _ = Describe("CLI unit tests", func() {
 		})
 
 		It("runs cli with and validates environment was passed", func() {
-			cli, err = utils.NewCLI(env, workingDirectory, &outputBuffer, &errorBuffer)
+			cli, err = run.NewCLI(env, workingDirectory, &outputBuffer, &errorBuffer)
 			Expect(err).NotTo(HaveOccurred())
 
 			err = cli.Run([]string{})
@@ -109,7 +109,7 @@ var _ = Describe("CLI unit tests", func() {
 		})
 
 		It("runs cli and captures output written stdout and stderr", func() {
-			cli, err = utils.NewCLI(echoOutput, workingDirectory, &outputBuffer, &errorBuffer)
+			cli, err = run.NewCLI(echoOutput, workingDirectory, &outputBuffer, &errorBuffer)
 			Expect(err).NotTo(HaveOccurred())
 
 			err = cli.Run([]string{"aa", "bb"})
@@ -119,14 +119,14 @@ var _ = Describe("CLI unit tests", func() {
 		})
 
 		It("runs cli and captures output written stdout and stderr as well as piped buffers", func() {
-			cli, err = utils.NewCLI(echoOutput, workingDirectory, &outputBuffer, &errorBuffer)
+			cli, err = run.NewCLI(echoOutput, workingDirectory, &outputBuffer, &errorBuffer)
 			Expect(err).NotTo(HaveOccurred())
 
 			var pipedOutputString strings.Builder
 			pipedOutput := cli.GetPipedOutputBuffer()
 			go func() {
 				if _, err := io.Copy(&pipedOutputString, pipedOutput); err != nil {
-					ginkgo.Fail(err.Error())
+					Fail(err.Error())
 				}
 			}()
 
@@ -134,7 +134,7 @@ var _ = Describe("CLI unit tests", func() {
 			pipedError := cli.GetPipedErrorBuffer()
 			go func() {
 				if _, err := io.Copy(&pipedErrorString, pipedError); err != nil {
-					ginkgo.Fail(err.Error())
+					Fail(err.Error())
 				}
 			}()
 
@@ -148,7 +148,7 @@ var _ = Describe("CLI unit tests", func() {
 		})
 
 		It("runs cli and captures output written stdout and stderr and passed environment variable", func() {
-			cli, err = utils.NewCLI(echoOutput, workingDirectory, &outputBuffer, &errorBuffer)
+			cli, err = run.NewCLI(echoOutput, workingDirectory, &outputBuffer, &errorBuffer)
 			Expect(err).NotTo(HaveOccurred())
 
 			err = cli.RunWithEnv([]string{"aa", "bb", "SOME_VAR"}, []string{"SOME_VAR=abcde"})
