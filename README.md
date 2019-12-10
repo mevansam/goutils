@@ -1,13 +1,3 @@
-## Collection of Utilities for Golang Applications
+# GoUtils
 
-This repository contains a collection of libraries implementing capabilities that can be reused by Golang applications.
-
-### Data Entry and Binding
-
-### Data Persistence
-
-### CLI Runner
-
-### Logrus Wrapper
-
-### Other Functions
+This library contains a collection of utility functions.
