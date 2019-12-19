@@ -154,6 +154,27 @@ func SplitString(input string, indent, width int, indentFirst bool) (string, boo
 	return out.String(), len(lines) > 1
 }
 
+func FormatMessage(
+	indent, width int,
+	indentFirst, capitalize bool,
+	format string, args ...interface{},
+) string {
+
+	if capitalize {
+		// capitalize all string arguments
+		for i, a := range args {
+			if s, ok := a.(string); ok {
+				b := []byte(s)
+				b[0] = b[0] ^ ('a' - 'A')
+				args[i] = string(b)
+			}
+		}
+	}
+
+	message, _ := SplitString(fmt.Sprintf(format, args...), indent, width, indentFirst)
+	return message
+}
+
 func RepeatString(s string, n int, out io.Writer) {
 
 	outSequence := []byte(s)
