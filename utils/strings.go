@@ -7,6 +7,19 @@ import (
 	"strings"
 )
 
+func PtrToStr(s string) *string {
+	return &s
+}
+
+func CopyStrPtr(s *string) *string {
+	if s != nil {
+		copy := *s
+		return &copy
+	} else {
+		return nil
+	}
+}
+
 func JoinListAsSentence(format string, list []string, quoteListItems bool) string {
 
 	var (
