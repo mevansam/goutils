@@ -59,7 +59,7 @@ func JoinListAsSentence(format string, list []string, quoteListItems bool) strin
 	return fmt.Sprintf(format, listAsString.String())
 }
 
-func SplitString(input string, indent, width int, indentFirst bool) (string, bool) {
+func SplitString(input string, indent, width int, indentFirst bool) []string {
 
 	var (
 		lines []string
@@ -68,8 +68,6 @@ func SplitString(input string, indent, width int, indentFirst bool) (string, boo
 		currentLine string
 
 		lastLine, lineLength, splitAt, nextAt int
-
-		out strings.Builder
 	)
 
 	lastLine = 0
@@ -141,6 +139,19 @@ func SplitString(input string, indent, width int, indentFirst bool) (string, boo
 		}
 	}
 
+	return lines
+}
+
+func FormatMultilineString(input string, indent, width int, indentFirst bool) (string, bool) {
+
+	var (
+		lines    []string
+		lastLine int
+
+		out strings.Builder
+	)
+
+	lines = SplitString(input, indent, width, indentFirst)
 	lastLine = len(lines) - 1
 	for i, l := range lines {
 		if indent > 0 && (indentFirst || i > 0) {
@@ -171,7 +182,7 @@ func FormatMessage(
 		}
 	}
 
-	message, _ := SplitString(fmt.Sprintf(format, args...), indent, width, indentFirst)
+	message, _ := FormatMultilineString(fmt.Sprintf(format, args...), indent, width, indentFirst)
 	return message
 }
 

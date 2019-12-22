@@ -38,7 +38,7 @@ var _ = Describe("string utils tests", func() {
 
 		It("splits and indents all lines except the first of a long string", func() {
 
-			s, l := utils.SplitString(
+			s, l := utils.FormatMultilineString(
 				"Terraform is a tool for building, changing, and versioning infrastructure safely and efficiently. Terraform can manage existing and popular service providers as well as custom in-house solutions.",
 				11, 80, false,
 			)
@@ -55,7 +55,7 @@ var _ = Describe("string utils tests", func() {
 
 		It("splits and indents all lines of a long string", func() {
 
-			s, l := utils.SplitString(
+			s, l := utils.FormatMultilineString(
 				"Terraform is a tool for building, changing, and versioning infrastructure safely and efficiently. Terraform can manage existing and popular service providers as well as custom in-house solutions.",
 				11, 80, true,
 			)
@@ -72,7 +72,7 @@ var _ = Describe("string utils tests", func() {
 
 		It("removes whitespace at split", func() {
 
-			s, l := utils.SplitString(
+			s, l := utils.FormatMultilineString(
 				"Terraform is a tool for building, changing, and versioning infrastructure            and efficiently. Terraform can manage existing and popular service providers as well as custom in-house solutions.",
 				11, 80, false,
 			)
