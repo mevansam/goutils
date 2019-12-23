@@ -177,7 +177,7 @@ func FormatMessage(
 			if s, ok := a.(string); ok {
 				b := []byte(s)
 				if b[0] > 96 && b[0] < 123 {
-					b[0] = b[0] | ('a' - 'A')
+					b[0] = b[0] ^ ('a' - 'A')
 					args[i] = string(b)
 				}
 			}
