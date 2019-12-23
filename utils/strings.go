@@ -176,8 +176,10 @@ func FormatMessage(
 		for i, a := range args {
 			if s, ok := a.(string); ok {
 				b := []byte(s)
-				b[0] = b[0] ^ ('a' - 'A')
-				args[i] = string(b)
+				if b[0] > 96 && b[0] < 123 {
+					b[0] = b[0] | ('a' - 'A')
+					args[i] = string(b)
+				}
 			}
 		}
 	}
