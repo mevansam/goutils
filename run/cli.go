@@ -37,6 +37,11 @@ func NewCLI(
 		info os.FileInfo
 	)
 
+	logger.TraceMessage("Creating CLI to execute binary '%s' from path '%s'.",
+		executablePath,
+		workingDirectory,
+	)
+
 	info, err = os.Stat(executablePath)
 	if os.IsNotExist(err) {
 		return nil, fmt.Errorf("binary not found at '%s'", executablePath)
