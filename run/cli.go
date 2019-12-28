@@ -10,6 +10,9 @@ import (
 )
 
 type CLI interface {
+	ExecutablePath() string
+	WorkingDirectory() string
+
 	GetPipedOutputBuffer() io.Reader
 	GetPipedErrorBuffer() io.Reader
 	Run(args []string) error
@@ -74,6 +77,14 @@ func NewCLI(
 		outBuffer: nil,
 		errBuffer: nil,
 	}, nil
+}
+
+func (c *cli) ExecutablePath() string {
+	return c.executablePath
+}
+
+func (c *cli) WorkingDirectory() string {
+	return c.workingDirectory
 }
 
 func (c *cli) GetPipedOutputBuffer() io.Reader {

@@ -83,6 +83,14 @@ func (c *FakeCLI) ExpectFakeRequest(key string) {
 	c.expectRequestKeys = append(c.expectRequestKeys, key)
 }
 
+func (c *FakeCLI) ExecutablePath() string {
+	return "/goutils/test/cli/executable"
+}
+
+func (c *FakeCLI) WorkingDirectory() string {
+	return "/goutils/test/cli/workingdirectory"
+}
+
 func (c *FakeCLI) GetPipedOutputBuffer() io.Reader {
 	c.outBuffer = c.outputBuffer
 
