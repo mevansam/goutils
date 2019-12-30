@@ -194,7 +194,7 @@ func (w *filterWriter) Close() error {
 		// happen if last line needs to be included but
 		// does not end in a new-line.
 		w.outputBuffer.Write(w.currentLine.Bytes())
-		w.filter.filterType = undefined
 	}
+	w.filter.filterType = undefined
 	return nil
 }
