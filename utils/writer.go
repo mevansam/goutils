@@ -127,18 +127,14 @@ func (w *filterWriter) Write(data []byte) (int, error) {
 	switch w.filter.filterType {
 
 	case blackHole:
-		return 0, nil
+		return len(data), nil
 
 	case passThru:
 		return w.outputBuffer.Write(data)
 
 	case applyFilters:
-		n := 0
 		for i, b := range data {
 			w.currentLine.WriteByte(b)
-			if w.filter.state == stateInclude {
-				n++
-			}
 
 			if b == '\n' {
 				buffer := w.currentLine.Bytes()
@@ -149,7 +145,7 @@ func (w *filterWriter) Write(data []byte) (int, error) {
 					if (!w.filter.hasIncludePatterns || w.filter.isMatch(w.filter.includePatterns, matchBuffer)) &&
 						(!w.filter.hasExcludePatterns || !w.filter.isMatch(w.filter.excludePatterns, matchBuffer)) {
 						if _, err = w.outputBuffer.Write(buffer); err != nil {
-							return n, err
+							return 0, err
 						}
 					}
 
@@ -180,7 +176,7 @@ func (w *filterWriter) Write(data []byte) (int, error) {
 				}
 			}
 		}
-		return n, nil
+		return len(data), nil
 	}
 
 	return 0, fmt.Errorf("unknown filter type")
