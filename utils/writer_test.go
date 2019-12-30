@@ -106,9 +106,9 @@ var _ = Describe("Output filter unit tests", func() {
 			filter.AddIncludeAfterPattern("the idea most people")
 			filter.AddExcludeAfterPattern("^individuals.$")
 			filterWriter := utils.NewFilterWriter(&filter, &outBuffer)
+			writeTestData(testData, filterWriter)
 			filterWriter.Close()
 
-			writeTestData(testData, filterWriter)
 			Expect(outBuffer.String()).To(Equal(testDataResult4))
 		})
 	})
