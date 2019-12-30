@@ -175,7 +175,10 @@ func (c *cli) RunWithEnv(
 		c.outPipeWriter.Close()
 
 		if c.outUnfilteredBuffer != nil {
+			// filter writer needs to be close to
+			// flush any unwritten data
 			c.outFilteredWriter.Close()
+
 			if !c.filteredAll {
 				// Discard the filtered buffer passed
 				// to the call to io.MultiWriter
@@ -186,20 +189,28 @@ func (c *cli) RunWithEnv(
 				// writer created by io.MultiWriter which
 				// can be discarded.
 			}
-			c.filteredAll = false
 		}
 		c.outputBuffer = c.outBuffer
 
-		c.outPipeWriter = nil
-		c.outBuffer = nil
+	} else if c.outUnfilteredBuffer != nil {
+		// filter writer needs to be close to
+		// flush any unwritten data
+		c.outFilteredWriter.Close()
+		c.outputBuffer = c.outUnfilteredBuffer
 	}
 	if c.errBuffer != nil {
 		c.errPipeWriter.Close()
 		c.errorBuffer = c.errBuffer
-
-		c.errPipeWriter = nil
-		c.errBuffer = nil
 	}
+
+	// reset filters and pipes
+	c.outPipeWriter = nil
+	c.outBuffer = nil
+	c.errPipeWriter = nil
+	c.errBuffer = nil
+	c.outFilteredWriter = nil
+	c.outUnfilteredBuffer = nil
+	c.filteredAll = false
 
 	return err
 }
