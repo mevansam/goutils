@@ -180,11 +180,13 @@ func (c *cli) RunWithEnv(
 				// Discard the filtered buffer passed
 				// to the call to io.MultiWriter
 				c.outBuffer = c.outUnfilteredBuffer
+
+				// if all buffers have not been filtered
+				// then c.outUnfilteredBuffer will be the
+				// writer created by io.MultiWriter which
+				// can be discarded.
 			}
-			// if all buffers have not been filtered
-			// then c.outUnfilteredBuffer will be the
-			// writer create by io.MultiWriter which
-			// can be discarded.
+			c.filteredAll = false
 		}
 		c.outputBuffer = c.outBuffer
 
