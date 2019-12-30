@@ -1,6 +1,7 @@
 package run_test
 
 import (
+	"fmt"
 	"io"
 	"path"
 	"path/filepath"
@@ -8,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/mevansam/goutils/run"
+	"github.com/mevansam/goutils/utils"
 
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
@@ -155,6 +157,64 @@ var _ = Describe("CLI unit tests", func() {
 			Expect(err).NotTo(HaveOccurred())
 			Expect(strings.Trim(outputBuffer.String(), "\r\n")).To(BeEquivalentTo("aa - SOME_VAR=abcde"))
 			Expect(strings.Trim(errorBuffer.String(), "\r\n")).To(BeEquivalentTo("bb - SOME_VAR=abcde"))
+		})
+
+		It("runs cli and captures filtered output written to stdout and complete output to piped buffers", func() {
+
+			var (
+				filter utils.Filter
+			)
+
+			cli, err = run.NewCLI(echoOutput, workingDirectory, &outputBuffer, &errorBuffer)
+			Expect(err).NotTo(HaveOccurred())
+
+			filter.AddExcludePattern("cccc")
+			cli.ApplyFilter(&filter)
+
+			var pipedOutputString strings.Builder
+			pipedOutput := cli.GetPipedOutputBuffer()
+			go func() {
+				if _, err := io.Copy(&pipedOutputString, pipedOutput); err != nil {
+					Fail(err.Error())
+				}
+			}()
+
+			err = cli.Run([]string{"aaaa\nbbbb\ncccc\ndddd\n", ""})
+			Expect(err).NotTo(HaveOccurred())
+			fmt.Println("==1>" + outputBuffer.String())
+			fmt.Println("==2>" + pipedOutputString.String())
+
+			Expect(outputBuffer.String()).To(BeEquivalentTo("aaaa\nbbbb\ndddd\n - written to stdout\n"))
+			Expect(pipedOutputString.String()).To(BeEquivalentTo("aaaa\nbbbb\ncccc\ndddd\n - written to stdout\n"))
+		})
+
+		It("runs cli and captures filtered output written to stdout and to piped buffers", func() {
+
+			var (
+				filter utils.Filter
+			)
+
+			cli, err = run.NewCLI(echoOutput, workingDirectory, &outputBuffer, &errorBuffer)
+			Expect(err).NotTo(HaveOccurred())
+
+			var pipedOutputString strings.Builder
+			pipedOutput := cli.GetPipedOutputBuffer()
+			go func() {
+				if _, err := io.Copy(&pipedOutputString, pipedOutput); err != nil {
+					Fail(err.Error())
+				}
+			}()
+
+			filter.AddExcludePattern("cccc")
+			cli.ApplyFilter(&filter)
+
+			err = cli.Run([]string{"aaaa\nbbbb\ncccc\ndddd\n", ""})
+			Expect(err).NotTo(HaveOccurred())
+			fmt.Println("==1>" + outputBuffer.String())
+			fmt.Println("==2>" + pipedOutputString.String())
+
+			Expect(outputBuffer.String()).To(BeEquivalentTo("aaaa\nbbbb\ndddd\n - written to stdout\n"))
+			Expect(pipedOutputString.String()).To(BeEquivalentTo("aaaa\nbbbb\ndddd\n - written to stdout\n"))
 		})
 	})
 })

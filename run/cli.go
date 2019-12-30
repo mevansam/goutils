@@ -7,14 +7,17 @@ import (
 	"os/exec"
 
 	"github.com/mevansam/goutils/logger"
+	"github.com/mevansam/goutils/utils"
 )
 
 type CLI interface {
 	ExecutablePath() string
 	WorkingDirectory() string
 
+	ApplyFilter(filter *utils.Filter)
 	GetPipedOutputBuffer() io.Reader
 	GetPipedErrorBuffer() io.Reader
+
 	Run(args []string) error
 	RunWithEnv(args []string, extraEnvVars []string) error
 }
@@ -27,6 +30,11 @@ type cli struct {
 	// Original buffer if pipe was created
 	outBuffer, errBuffer         io.Writer
 	outPipeWriter, errPipeWriter *io.PipeWriter
+
+	// Original buffer after filter has been applied
+	outFilteredWriter   io.WriteCloser
+	outUnfilteredBuffer io.Writer
+	filteredAll         bool
 }
 
 func NewCLI(
@@ -87,7 +95,26 @@ func (c *cli) WorkingDirectory() string {
 	return c.workingDirectory
 }
 
+func (c *cli) ApplyFilter(filter *utils.Filter) {
+
+	if c.outUnfilteredBuffer != nil {
+		panic("a filter can only be applied once")
+	}
+
+	// flags if filter is being applied on top
+	// of an existing output aggregator
+	c.filteredAll = (c.outPipeWriter != nil)
+
+	c.outUnfilteredBuffer = c.outputBuffer
+	c.outFilteredWriter = utils.NewFilterWriter(filter, c.outUnfilteredBuffer)
+	c.outputBuffer = c.outFilteredWriter
+}
+
 func (c *cli) GetPipedOutputBuffer() io.Reader {
+
+	if c.outPipeWriter != nil {
+		panic("you can retrieve a piped output buffer only once")
+	}
 
 	// save original buffer
 	c.outBuffer = c.outputBuffer
@@ -99,6 +126,10 @@ func (c *cli) GetPipedOutputBuffer() io.Reader {
 }
 
 func (c *cli) GetPipedErrorBuffer() io.Reader {
+
+	if c.errPipeWriter != nil {
+		panic("you can retrieve a piped error buffer only once")
+	}
 
 	// save original buffer
 	c.errBuffer = c.errorBuffer
@@ -142,6 +173,19 @@ func (c *cli) RunWithEnv(
 	// Restore buffers if piped
 	if c.outBuffer != nil {
 		c.outPipeWriter.Close()
+
+		if c.outUnfilteredBuffer != nil {
+			c.outFilteredWriter.Close()
+			if !c.filteredAll {
+				// Discard the filtered buffer passed
+				// to the call to io.MultiWriter
+				c.outBuffer = c.outUnfilteredBuffer
+			}
+			// if all buffers have not been filtered
+			// then c.outUnfilteredBuffer will be the
+			// writer create by io.MultiWriter which
+			// can be discarded.
+		}
 		c.outputBuffer = c.outBuffer
 
 		c.outPipeWriter = nil
