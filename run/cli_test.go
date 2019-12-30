@@ -1,7 +1,6 @@
 package run_test
 
 import (
-	"fmt"
 	"io"
 	"path"
 	"path/filepath"
@@ -181,8 +180,6 @@ var _ = Describe("CLI unit tests", func() {
 
 			err = cli.Run([]string{"aaaa\nbbbb\ncccc\ndddd\n", ""})
 			Expect(err).NotTo(HaveOccurred())
-			fmt.Println("==1>" + outputBuffer.String())
-			fmt.Println("==2>" + pipedOutputString.String())
 
 			Expect(outputBuffer.String()).To(BeEquivalentTo("aaaa\nbbbb\ndddd\n - written to stdout\n"))
 			Expect(pipedOutputString.String()).To(BeEquivalentTo("aaaa\nbbbb\ncccc\ndddd\n - written to stdout\n"))
@@ -210,8 +207,6 @@ var _ = Describe("CLI unit tests", func() {
 
 			err = cli.Run([]string{"aaaa\nbbbb\ncccc\ndddd\n", ""})
 			Expect(err).NotTo(HaveOccurred())
-			fmt.Println("==1>" + outputBuffer.String())
-			fmt.Println("==2>" + pipedOutputString.String())
 
 			Expect(outputBuffer.String()).To(BeEquivalentTo("aaaa\nbbbb\ndddd\n - written to stdout\n"))
 			Expect(pipedOutputString.String()).To(BeEquivalentTo("aaaa\nbbbb\ndddd\n - written to stdout\n"))
