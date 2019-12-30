@@ -10,7 +10,7 @@ import (
 	. "github.com/onsi/gomega"
 )
 
-func TestUtils(t *testing.T) {
+func TestRun(t *testing.T) {
 	logger.Initialize()
 
 	RegisterFailHandler(Fail)
