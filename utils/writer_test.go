@@ -127,9 +127,9 @@ var _ = Describe("Output filter unit tests", func() {
 			filter.AddIncludePattern(" of ")
 			filter.AddExcludePattern(" rights ")
 			filterWriter := utils.NewFilterWriter(&filter, &outBuffer)
+			writeTestData(testData, filterWriter)
 			filterWriter.Close()
 
-			writeTestData(testData, filterWriter)
 			Expect(outBuffer.String()).To(Equal(testDataResult5))
 		})
 	})
