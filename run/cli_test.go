@@ -14,7 +14,7 @@ import (
 	. "github.com/onsi/gomega"
 )
 
-var _ = Describe("CLI unit tests", func() {
+var _ = Describe("CLI", func() {
 
 	var (
 		err error
