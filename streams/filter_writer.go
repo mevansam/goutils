@@ -1,4 +1,4 @@
-package utils
+package streams
 
 import (
 	"bytes"
@@ -169,7 +169,9 @@ func (w *filterWriter) Write(data []byte) (int, error) {
 							// remainder of stream then the remaining data
 							// should be treated as pass thru.
 							w.filter.filterType = passThru
-							w.outputBuffer.Write(data[i+1:])
+							if _, err = w.outputBuffer.Write(data[i+1:]); err != nil {
+								return 0, nil
+							}
 							break
 						}
 					}
@@ -185,11 +187,18 @@ func (w *filterWriter) Write(data []byte) (int, error) {
 // interface: io.Writer
 
 func (w *filterWriter) Close() error {
+
+	var (
+		err error
+	)
+
 	if w.filter.state == stateInclude {
 		// flush any remaining data to output. this can
 		// happen if last line needs to be included but
 		// does not end in a new-line.
-		w.outputBuffer.Write(w.currentLine.Bytes())
+		if _, err = w.outputBuffer.Write(w.currentLine.Bytes()); err != nil {
+			return nil
+		}
 	}
 	w.filter.filterType = undefined
 	return nil

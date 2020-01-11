@@ -1,16 +1,19 @@
-package utils_test
+package streams_test
 
 import (
 	"io"
 	"strings"
 
-	"github.com/mevansam/goutils/utils"
-
+	"github.com/mevansam/goutils/streams"
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
 )
 
 var _ = Describe("Output filter unit tests", func() {
+
+	var (
+		err error
+	)
 
 	Context("simple include or exclude all function", func() {
 
@@ -18,12 +21,13 @@ var _ = Describe("Output filter unit tests", func() {
 
 			var (
 				outBuffer strings.Builder
-				filter    utils.Filter
+				filter    streams.Filter
 			)
 
 			filter.SetPassThru()
-			filterWriter := utils.NewFilterWriter(&filter, &outBuffer)
-			writeTestData(testData, filterWriter)
+			filterWriter := streams.NewFilterWriter(&filter, &outBuffer)
+			err = writeTestData(testData, filterWriter)
+			Expect(err).NotTo(HaveOccurred())
 			filterWriter.Close()
 
 			Expect(outBuffer.String()).To(Equal(testData))
@@ -33,12 +37,13 @@ var _ = Describe("Output filter unit tests", func() {
 
 			var (
 				outBuffer strings.Builder
-				filter    utils.Filter
+				filter    streams.Filter
 			)
 
 			filter.SetBlackHole()
-			filterWriter := utils.NewFilterWriter(&filter, &outBuffer)
-			writeTestData(testData, filterWriter)
+			filterWriter := streams.NewFilterWriter(&filter, &outBuffer)
+			err = writeTestData(testData, filterWriter)
+			Expect(err).NotTo(HaveOccurred())
 			filterWriter.Close()
 
 			Expect(outBuffer.String()).To(Equal(""))
@@ -51,12 +56,13 @@ var _ = Describe("Output filter unit tests", func() {
 
 			var (
 				outBuffer strings.Builder
-				filter    utils.Filter
+				filter    streams.Filter
 			)
 
 			filter.AddExcludeAfterPattern("^individuals.$")
-			filterWriter := utils.NewFilterWriter(&filter, &outBuffer)
-			writeTestData(testData, filterWriter)
+			filterWriter := streams.NewFilterWriter(&filter, &outBuffer)
+			err = writeTestData(testData, filterWriter)
+			Expect(err).NotTo(HaveOccurred())
 			filterWriter.Close()
 
 			Expect(outBuffer.String()).To(Equal(testDataResult1))
@@ -66,12 +72,13 @@ var _ = Describe("Output filter unit tests", func() {
 
 			var (
 				outBuffer strings.Builder
-				filter    utils.Filter
+				filter    streams.Filter
 			)
 
 			filter.AddIncludeAfterPattern("^individuals.$")
-			filterWriter := utils.NewFilterWriter(&filter, &outBuffer)
-			writeTestData(testData, filterWriter)
+			filterWriter := streams.NewFilterWriter(&filter, &outBuffer)
+			err = writeTestData(testData, filterWriter)
+			Expect(err).NotTo(HaveOccurred())
 			filterWriter.Close()
 
 			Expect(outBuffer.String()).To(Equal(testDataResult2))
@@ -81,13 +88,15 @@ var _ = Describe("Output filter unit tests", func() {
 
 			var (
 				outBuffer strings.Builder
-				filter    utils.Filter
+				filter    streams.Filter
 			)
 
 			filter.AddExcludeAfterPattern("personal information")
 			filter.AddIncludeAfterPattern("attention")
-			filterWriter := utils.NewFilterWriter(&filter, &outBuffer)
-			writeTestData(testData, filterWriter)
+			filterWriter := streams.NewFilterWriter(&filter, &outBuffer)
+			err = writeTestData(testData, filterWriter)
+			Expect(err).NotTo(HaveOccurred())
+
 			// it is important that close is called
 			// before retrieving outBuffer to ensure
 			// all data has been flushed
@@ -100,13 +109,14 @@ var _ = Describe("Output filter unit tests", func() {
 
 			var (
 				outBuffer strings.Builder
-				filter    utils.Filter
+				filter    streams.Filter
 			)
 
 			filter.AddIncludeAfterPattern("the idea most people")
 			filter.AddExcludeAfterPattern("^individuals.$")
-			filterWriter := utils.NewFilterWriter(&filter, &outBuffer)
-			writeTestData(testData, filterWriter)
+			filterWriter := streams.NewFilterWriter(&filter, &outBuffer)
+			err = writeTestData(testData, filterWriter)
+			Expect(err).NotTo(HaveOccurred())
 			filterWriter.Close()
 
 			Expect(outBuffer.String()).To(Equal(testDataResult4))
@@ -119,15 +129,16 @@ var _ = Describe("Output filter unit tests", func() {
 
 			var (
 				outBuffer strings.Builder
-				filter    utils.Filter
+				filter    streams.Filter
 			)
 
 			filter.AddIncludeAfterPattern("the idea most people")
 			filter.AddExcludeAfterPattern("^individuals.$")
 			filter.AddIncludePattern(" of ")
 			filter.AddExcludePattern(" rights ")
-			filterWriter := utils.NewFilterWriter(&filter, &outBuffer)
-			writeTestData(testData, filterWriter)
+			filterWriter := streams.NewFilterWriter(&filter, &outBuffer)
+			err = writeTestData(testData, filterWriter)
+			Expect(err).NotTo(HaveOccurred())
 			filterWriter.Close()
 
 			Expect(outBuffer.String()).To(Equal(testDataResult5))
