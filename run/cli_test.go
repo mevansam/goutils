@@ -8,7 +8,7 @@ import (
 	"strings"
 
 	"github.com/mevansam/goutils/run"
-	"github.com/mevansam/goutils/utils"
+	"github.com/mevansam/goutils/streams"
 
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
@@ -161,7 +161,7 @@ var _ = Describe("CLI", func() {
 		It("runs cli and captures filtered output written to stdout and complete output to piped buffers", func() {
 
 			var (
-				filter utils.Filter
+				filter streams.Filter
 			)
 
 			cli, err = run.NewCLI(echoOutput, workingDirectory, &outputBuffer, &errorBuffer)
@@ -188,7 +188,7 @@ var _ = Describe("CLI", func() {
 		It("runs cli and captures filtered output written to stdout and to piped buffers", func() {
 
 			var (
-				filter utils.Filter
+				filter streams.Filter
 			)
 
 			cli, err = run.NewCLI(echoOutput, workingDirectory, &outputBuffer, &errorBuffer)

@@ -7,14 +7,14 @@ import (
 	"os/exec"
 
 	"github.com/mevansam/goutils/logger"
-	"github.com/mevansam/goutils/utils"
+	"github.com/mevansam/goutils/streams"
 )
 
 type CLI interface {
 	ExecutablePath() string
 	WorkingDirectory() string
 
-	ApplyFilter(filter *utils.Filter)
+	ApplyFilter(filter *streams.Filter)
 	GetPipedOutputBuffer() io.Reader
 	GetPipedErrorBuffer() io.Reader
 
@@ -95,7 +95,7 @@ func (c *cli) WorkingDirectory() string {
 	return c.workingDirectory
 }
 
-func (c *cli) ApplyFilter(filter *utils.Filter) {
+func (c *cli) ApplyFilter(filter *streams.Filter) {
 
 	if c.outUnfilteredBuffer != nil {
 		panic("a filter can only be applied once")
@@ -106,7 +106,7 @@ func (c *cli) ApplyFilter(filter *utils.Filter) {
 	c.filteredAll = (c.outPipeWriter != nil)
 
 	c.outUnfilteredBuffer = c.outputBuffer
-	c.outFilteredWriter = utils.NewFilterWriter(filter, c.outUnfilteredBuffer)
+	c.outFilteredWriter = streams.NewFilterWriter(filter, c.outUnfilteredBuffer)
 	c.outputBuffer = c.outFilteredWriter
 }
 

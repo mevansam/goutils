@@ -7,7 +7,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/mevansam/goutils/utils"
+	"github.com/mevansam/goutils/streams"
 	. "github.com/onsi/gomega"
 )
 
@@ -92,7 +92,7 @@ func (c *FakeCLI) WorkingDirectory() string {
 	return "/goutils/test/cli/workingdirectory"
 }
 
-func (c *FakeCLI) ApplyFilter(filter *utils.Filter) {
+func (c *FakeCLI) ApplyFilter(filter *streams.Filter) {
 }
 
 func (c *FakeCLI) GetPipedOutputBuffer() io.Reader {
