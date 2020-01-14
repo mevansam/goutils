@@ -3,7 +3,6 @@ package streams_test
 import (
 	"bufio"
 	"io"
-	"os"
 	"strings"
 
 	"github.com/mevansam/goutils/streams"
@@ -12,7 +11,7 @@ import (
 	. "github.com/onsi/gomega"
 )
 
-var _ = Describe("Expect Stream Interceptor", func() {
+var _ = FDescribe("Expect Stream Interceptor", func() {
 
 	var (
 		err error
@@ -39,63 +38,213 @@ var _ = Describe("Expect Stream Interceptor", func() {
 		}
 	}
 
+	// send EOT to simulate session termination
+	sendEOT := func(stdinWriter io.WriteCloser, stdinOfSender io.Reader) {
+
+		eot := make([]byte, 1)
+		writeData(stdinWriter, []byte{4}, 32)
+
+		// eot should have been transmitted to receiver
+		_, err = stdinOfSender.Read(eot)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(eot).To(Equal([]byte{4}))
+	}
+
 	BeforeEach(func() {
 		outputBuffer.Reset()
 	})
 
-	Context("send commands", func() {
+	Context("stream exit tests", func() {
 
-		FIt("receives commands from expect stream", func() {
+		It("exits when user enters 'ctrl-d' via client input", func() {
 
 			// pipe to send data from client
-			stInSender, _ := io.Pipe()
+			stdin, stdinWriter := io.Pipe()
+			es, stdinOfSender, stdoutOfSender := streams.NewExpectStream(
+				stdin, &outputBuffer,
+				func() {
+					stdinWriter.Close()
+				},
+			)
 
-			es, stInReciever, stOutReciever := streams.NewExpectStream(stInSender, os.Stdout /*&outputBuffer*/)
+			es.SetBufferSize(32)
+			es.StartAsShell()
+
+			writeData(stdoutOfSender, []byte(testRecieverWelcome), 32)
+			sendEOT(stdinWriter, stdinOfSender)
+
+			// ensure all data is flushed
+			es.Close()
+
+			Expect(outputBuffer.String()).To(Equal(
+				testRecieverWelcome,
+			))
+		})
+
+		It("exits when user enters 'exit' via client input", func() {
+
+			// pipe to send data from client
+			stdin, stdinWriter := io.Pipe()
+			es, stdinOfSender, stdoutOfSender := streams.NewExpectStream(
+				stdin, &outputBuffer,
+				func() {
+					stdinWriter.Close()
+				},
+			)
+
+			es.SetBufferSize(32)
+			es.StartAsShell()
+
+			// reader from which data sent to receiver can be retrieved
+			recieverData := bufio.NewScanner(stdinOfSender)
+
+			writeData(stdoutOfSender, []byte(testRecieverWelcome), 32)
+			writeData(stdinWriter, []byte("exit\n"), 32)
+			recieverData.Scan()
+			command := recieverData.Text()
+			Expect(command).To(Equal("exit"))
+
+			// ensure all data is flushed
+			es.Close()
+
+			Expect(outputBuffer.String()).To(Equal(
+				testRecieverWelcome,
+			))
+		})
+	})
+
+	Context("send commands", func() {
+
+		It("receives commands from expect stream", func() {
+
+			// pipe to send data from client
+			stdin, stdinWriter := io.Pipe()
+
+			es, stdinOfSender, stdoutOfSender := streams.NewExpectStream(
+				stdin, &outputBuffer,
+				func() {
+					stdinWriter.Close()
+				},
+			)
 			defer func() {
-				stInReciever.Close()
-				stOutReciever.Close()
+				es.Close()
 			}()
 
 			es.SetBufferSize(32)
-			es.AddMultiLineExpect(
-				`^Welcome to Ubuntu`,
-				`^bastion-admin@cbs-test:\~\$`,
-				"sudo su -\n",
+			es.AddExpectOutTrigger(
+				&streams.Expect{
+					StartPattern: `^Welcome to Ubuntu`,
+					EndPattern:   `^bastion-admin@cbs-test:\~\$`,
+					Command:      "sudo su -\n",
+				},
 				true,
 			)
-			es.AddExpect(
-				`password for bastion-admin:`,
-				"P@ssw0rd!\n",
+			es.AddExpectOutTrigger(
+				&streams.Expect{
+					StartPattern: `password for bastion-admin:`,
+					Command:      "P@ssw0rd!\n",
+				},
 				true,
 			)
-			es.AddExpect(
-				`root@cbs-test:\~\#`,
-				"ls -al /usr\n",
+			es.AddExpectOutTrigger(
+				&streams.Expect{
+					StartPattern: `root@cbs-test:\~\#`,
+					Command:      "ls -al /usr\n",
+				},
 				true,
 			)
-			es.Start()
+			es.StartAsShell()
 
 			// reader from which data sent to receiver can be retrieved
-			recieverData := bufio.NewScanner(stInReciever)
+			recieverData := bufio.NewScanner(stdinOfSender)
 
-			writeData(stOutReciever, []byte(testRecieverWelcome), 32)
+			writeData(stdoutOfSender, []byte(testRecieverWelcome), 32)
 			recieverData.Scan()
 			command := recieverData.Text()
 			Expect(command).To(Equal("sudo su -"))
-			writeData(stOutReciever, []byte(command+"\n"), 32)
 
-			writeData(stOutReciever, []byte(testRecieverSudoPassword), 32)
+			writeData(stdoutOfSender, []byte(testRecieverSudoPassword), 32)
 			recieverData.Scan()
 			command = recieverData.Text()
 			Expect(command).To(Equal("P@ssw0rd!"))
-			writeData(stOutReciever, []byte(command+"\n"), 32)
 
-			writeData(stOutReciever, []byte(testRecieverSudoPrompt), 32)
+			writeData(stdoutOfSender, []byte(testRecieverSudoPrompt), 32)
 			recieverData.Scan()
 			command = recieverData.Text()
 			Expect(command).To(Equal("ls -al /usr"))
-			writeData(stOutReciever, []byte(testRecieverListOutput), 32)
-			writeData(stOutReciever, []byte(command+"\n"), 32)
+			writeData(stdoutOfSender, []byte(testRecieverListOutput), 32)
+
+			sendEOT(stdinWriter, stdinOfSender)
+
+			// ensure all data is flushed
+			es.Close()
+
+			Expect(outputBuffer.String()).To(Equal(
+				testRecieverWelcome + testRecieverSudoPassword + testRecieverSudoPrompt + testRecieverListOutput,
+			))
+		})
+
+		It("receives commands from expect stream and user input", func() {
+
+			// pipe to send data from client
+			stdin, stdinWriter := io.Pipe()
+
+			es, stdinOfSender, stdoutOfSender := streams.NewExpectStream(
+				stdin, &outputBuffer,
+				func() {
+					stdinWriter.Close()
+				},
+			)
+			defer func() {
+				es.Close()
+			}()
+
+			es.SetBufferSize(32)
+			es.AddExpectOutTrigger(
+				&streams.Expect{
+					StartPattern: `^Welcome to Ubuntu`,
+					EndPattern:   `^bastion-admin@cbs-test:\~\$`,
+					Command:      "sudo su -\n",
+				},
+				true,
+			)
+			es.AddExpectOutTrigger(
+				&streams.Expect{
+					StartPattern: `password for bastion-admin:`,
+					Command:      "P@ssw0rd!\n",
+				},
+				true,
+			)
+			es.StartAsShell()
+
+			// reader from which data sent to receiver can be retrieved
+			recieverData := bufio.NewScanner(stdinOfSender)
+
+			writeData(stdoutOfSender, []byte(testRecieverWelcome), 32)
+			recieverData.Scan()
+			command := recieverData.Text()
+			Expect(command).To(Equal("sudo su -"))
+
+			writeData(stdoutOfSender, []byte(testRecieverSudoPassword), 32)
+			recieverData.Scan()
+			command = recieverData.Text()
+			Expect(command).To(Equal("P@ssw0rd!"))
+
+			writeData(stdoutOfSender, []byte(testRecieverSudoPrompt), 32)
+			writeData(stdinWriter, []byte("ls -al /usr\n"), 32)
+			recieverData.Scan()
+			command = recieverData.Text()
+			Expect(command).To(Equal("ls -al /usr"))
+			writeData(stdoutOfSender, []byte(testRecieverListOutput), 32)
+
+			sendEOT(stdinWriter, stdinOfSender)
+
+			// ensure all data is flushed
+			es.Close()
+
+			Expect(outputBuffer.String()).To(Equal(
+				testRecieverWelcome + testRecieverSudoPassword + testRecieverSudoPrompt + testRecieverListOutput,
+			))
 		})
 	})
 })

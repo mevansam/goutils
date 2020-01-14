@@ -7,7 +7,6 @@ import (
 	"io"
 	"net"
 	"os"
-	"regexp"
 
 	"golang.org/x/crypto/ssh"
 )
@@ -313,14 +312,6 @@ type remoteShell struct {
 
 	terminalConfig *SSHTerminalConfig
 	requestPty     bool
-
-	expectScript []expect
-}
-
-type expect struct {
-	startPattern,
-	endPattern *regexp.Regexp
-	command string
 }
 
 // create an interactive shell on client
@@ -335,8 +326,6 @@ func (c *SSHClient) Terminal(config *SSHTerminalConfig) *remoteShell {
 
 		terminalConfig: config,
 		requestPty:     true,
-
-		expectScript: []expect{},
 	}
 }
 
@@ -352,8 +341,6 @@ func (c *SSHClient) Shell() *remoteShell {
 
 		terminalConfig: nil,
 		requestPty:     false,
-
-		expectScript: []expect{},
 	}
 }
 
@@ -370,54 +357,22 @@ func (rs *remoteShell) SetStdio(
 }
 
 // Start start a remote shell on client
-// after running the initial script
-func (rs *remoteShell) AddExpect(
-	startPattern,
-	endPattern,
-	command string,
-) *remoteShell {
-
-	rs.expectScript = append(rs.expectScript,
-		expect{
-			startPattern: regexp.MustCompile(startPattern),
-			endPattern:   regexp.MustCompile(endPattern),
-			command:      command,
-		},
-	)
-	return rs
-}
-
-// Start start a remote shell on client
 func (rs *remoteShell) Start() error {
 
 	var (
 		err error
 
 		session *ssh.Session
-
-		shellWriter *io.PipeWriter
-		shellReader *io.PipeReader
 	)
-
-	defer func() {
-		if session != nil {
-			session.Close()
-		}
-		if shellReader != nil {
-			shellReader.Close()
-		}
-		if shellWriter != nil {
-			shellWriter.Close()
-		}
-	}()
 
 	if session, err = rs.client.NewSession(); err != nil {
 		return err
 	}
+	defer session.Close()
 
-	session.Stdin, shellWriter = io.Pipe()
-	shellReader, session.Stdout = io.Pipe()
-	session.Stderr = session.Stdout
+	session.Stdin = rs.stdin
+	session.Stdout = rs.stdout
+	session.Stderr = rs.stderr
 
 	if rs.requestPty {
 		tc := rs.terminalConfig
@@ -436,62 +391,6 @@ func (rs *remoteShell) Start() error {
 	if err := session.Shell(); err != nil {
 		return err
 	}
-
-	go func() {
-
-		var (
-			err error
-
-			buffer []byte
-			len    int
-
-			// line string
-		)
-
-		// outputReader := bufio.NewReaderSize(shellReader, 512)
-		buffer = make([]byte, 512)
-		for {
-
-			if len, err = shellReader.Read(buffer); err != nil {
-				break
-			}
-			fmt.Println(string(buffer[0:len]))
-
-			// if line, err = outputReader.ReadString('\n'); err == io.EOF {
-			// 	break
-			// }
-			// fmt.Println(line)
-		}
-	}()
-
-	go func() {
-
-		var (
-			err error
-
-			buffer        []byte
-			from, to, len int
-		)
-
-		buffer = make([]byte, 512)
-		for {
-			if len, err = rs.stdin.Read(buffer); err != nil {
-				break
-			}
-			fmt.Print(string(buffer[from:to]))
-
-			// write all data read
-			from = 0
-			to = len
-			for from < to {
-				if len, err = shellWriter.Write(buffer[from:to]); err != nil {
-					break
-				}
-				from = from + len
-			}
-		}
-	}()
-
 	if err := session.Wait(); err != nil {
 		return err
 	}
