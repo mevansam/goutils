@@ -153,6 +153,16 @@ func (es *ExpectStream) SetShellExitCommand(command string) {
 			active:       false,
 		},
 	)
+	es.triggerInExpects = append(es.triggerInExpects,
+		&Expect{
+			startPattern: regexp.MustCompile(`^logout$`),
+			endPattern:   nil,
+			Command:      command,
+			OnNewLine:    true,
+			Exit:         true,
+			active:       false,
+		},
+	)
 }
 
 func (es *ExpectStream) Start() {
