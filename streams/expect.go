@@ -147,9 +147,9 @@ func (es *ExpectStream) SetShellExitCommand(command string) {
 		&Expect{
 			startPattern: regexp.MustCompile(`^exit$`),
 			endPattern:   nil,
-			Exit:         true,
-			OnNewLine:    true,
 			Command:      command,
+			OnNewLine:    true,
+			Exit:         true,
 			active:       false,
 		},
 	)
