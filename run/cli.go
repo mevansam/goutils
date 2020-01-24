@@ -5,6 +5,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"runtime"
 
 	"github.com/mevansam/goutils/logger"
 	"github.com/mevansam/goutils/streams"
@@ -60,7 +61,7 @@ func NewCLI(
 	if err != nil {
 		return nil, err
 	}
-	if (info.Mode() & 0111) == 0 {
+	if runtime.GOOS != "windows" && (info.Mode()&0111) == 0 {
 		return nil, fmt.Errorf("binary at '%s' is not executable", executablePath)
 	}
 
