@@ -199,11 +199,11 @@ func RepeatString(s string, n int, out io.Writer) {
 }
 
 func RandomString(n int) string {
-	var letter = []rune("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789")
+	const letterBytes = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
 
-	b := make([]rune, n)
+	b := make([]byte, n)
 	for i := range b {
-		b[i] = letter[rand.Intn(len(letter))]
+		b[i] = letterBytes[rand.Int63() % int64(len(letterBytes))]
 	}
 	return string(b)
 }
