@@ -138,7 +138,7 @@ func (c *FakeCLI) RunWithEnv(
 		c.expectRequestKeys = c.expectRequestKeys[1:l]
 
 		if debug {
-			log.Printf("DEBUG: given request    = %s\n", requestKey)
+			log.Printf("DEBUG: given request = %s\n", requestKey)
 			log.Printf("DEBUG: expected request = %s\n\n", expectRequestKey)
 		}
 
