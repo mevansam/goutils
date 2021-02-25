@@ -59,7 +59,7 @@ func JoinListAsSentence(format string, list []string, quoteListItems bool) strin
 	return fmt.Sprintf(format, listAsString.String())
 }
 
-func SplitString(input string, indent, width int, indentFirst bool) []string {
+func SplitString(input string, indent, width int) []string {
 
 	var (
 		lines []string
@@ -67,7 +67,11 @@ func SplitString(input string, indent, width int, indentFirst bool) []string {
 		ch          byte
 		currentLine string
 
-		lastLine, lineLength, splitAt, nextAt int
+		testWidth, 
+		lastLine, 
+		lineLength, 
+		splitAt, 
+		nextAt int
 	)
 
 	lastLine = 0
@@ -77,9 +81,15 @@ func SplitString(input string, indent, width int, indentFirst bool) []string {
 		return ch == ' ' || ch == '\t' || ch == '\r' || ch == '\n'
 	}
 
-	for len(lines[lastLine]) > width {
+	if indent > 0 {
+		testWidth = width + indent			
+	} else {
+		testWidth = width
+	}
+	for len(lines[lastLine]) > testWidth {
 
-		splitAt = width
+		splitAt = testWidth
+		testWidth = width
 		currentLine = lines[lastLine]
 		lineLength = len(currentLine)
 
@@ -142,7 +152,12 @@ func SplitString(input string, indent, width int, indentFirst bool) []string {
 	return lines
 }
 
-func FormatMultilineString(input string, indent, width int, indentFirst bool) (string, bool) {
+func FormatMultilineString(
+	input string, 
+	indent, width int, 
+	padFirstIndent bool,
+	splitEven bool,
+) (string, bool) {
 
 	var (
 		lines    []string
@@ -151,10 +166,14 @@ func FormatMultilineString(input string, indent, width int, indentFirst bool) (s
 		out strings.Builder
 	)
 
-	lines = SplitString(input, indent, width, indentFirst)
+	if padFirstIndent || splitEven {
+		lines = SplitString(input, 0, width)
+	} else {
+		lines = SplitString(input, indent, width - indent)
+	}
 	lastLine = len(lines) - 1
 	for i, l := range lines {
-		if indent > 0 && (indentFirst || i > 0) {
+		if indent > 0 && (padFirstIndent || i > 0) {
 			out.WriteString(strings.Repeat(" ", indent))
 		}
 		out.WriteString(l)
@@ -184,7 +203,7 @@ func FormatMessage(
 		}
 	}
 
-	message, _ := FormatMultilineString(fmt.Sprintf(format, args...), indent, width, indentFirst)
+	message, _ := FormatMultilineString(fmt.Sprintf(format, args...), indent, width, indentFirst, false)
 	return message
 }
 
