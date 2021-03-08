@@ -40,7 +40,7 @@ var _ = Describe("string utils tests", func() {
 
 			s, l := utils.FormatMultilineString(
 				"Terraform is a tool for building, changing, and versioning infrastructure safely and efficiently. Terraform can manage existing and popular service providers as well as custom in-house solutions.",
-				11, 80, false,
+				11, 80, false, true,
 			)
 			Expect(l).To(BeTrue())
 
@@ -57,7 +57,7 @@ var _ = Describe("string utils tests", func() {
 
 			s, l := utils.FormatMultilineString(
 				"Terraform is a tool for building, changing, and versioning infrastructure safely and efficiently. Terraform can manage existing and popular service providers as well as custom in-house solutions.",
-				11, 80, true,
+				11, 80, true, true,
 			)
 			Expect(l).To(BeTrue())
 
@@ -74,7 +74,7 @@ var _ = Describe("string utils tests", func() {
 
 			s, l := utils.FormatMultilineString(
 				"Terraform is a tool for building, changing, and versioning infrastructure            and efficiently. Terraform can manage existing and popular service providers as well as custom in-house solutions.",
-				11, 80, false,
+				11, 80, false, true,
 			)
 			Expect(l).To(BeTrue())
 
