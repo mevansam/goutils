@@ -6,6 +6,8 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+
+	"github.com/mevansam/goutils/logger"
 )
 
 // Returns the map from an array of maps with the key matching the given regex.
@@ -110,6 +112,19 @@ func getValueRefAtPath(keyPath []string, valueMap interface{}) (interface{}, err
 // in: keyPath - key path where path separator is '/'
 // in: valueMap - nested map of maps to lookup key in
 // out: the value at the given path
+func MustGetValueAtPath(keyPath string, valueMap interface{}) interface{} {
+
+	var (
+		err   error
+		value interface{}
+	)
+
+	if value, err = GetValueAtPath(keyPath, valueMap); err != nil {
+		logger.TraceMessage("utils.MustGetValueAtPath: %s", err.Error())		
+	}
+	return value
+}
+
 func GetValueAtPath(keyPath string, valueMap interface{}) (interface{}, error) {
 	if strings.HasPrefix(keyPath, "/") {
 		return getValueAtPath(strings.Split(keyPath[1:], "/"), valueMap)
