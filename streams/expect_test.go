@@ -11,7 +11,7 @@ import (
 	. "github.com/onsi/gomega"
 )
 
-var _ = FDescribe("Expect Stream Interceptor", func() {
+var _ = Describe("Expect Stream Interceptor", func() {
 
 	var (
 		err error
