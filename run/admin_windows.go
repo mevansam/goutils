@@ -3,8 +3,14 @@
 package run
 
 import (
+	"io"
+
 	"golang.org/x/sys/windows"
 )
+
+func RunAsAdmin(outputBuffer, errorBuffer io.Writer) error {
+	return nil
+}
 
 func IsAdmin() (bool, error) {
 	
