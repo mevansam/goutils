@@ -22,10 +22,10 @@ type MockHttpServer struct {
 }
 
 type request struct {
-	expectHeaders []header
+	callbackTest func(r *http.Request, body string) *string
 
+	expectHeaders     []header
 	expectJSONRequest interface{}
-
 	expectRequestBody *string
 	responseBody      *string
 
@@ -86,9 +86,10 @@ func (ms *MockHttpServer) MockResponseReflector(w http.ResponseWriter, r *http.R
 	var (
 		err error
 
-		buffer      bytes.Buffer
-		size        int64
-		requestBody string
+		buffer       bytes.Buffer
+		size         int64
+		requestBody  string
+		responseBody *string
 
 		hasError bool
 	)
@@ -203,9 +204,16 @@ func (ms *MockHttpServer) MockResponseReflector(w http.ResponseWriter, r *http.R
 		return
 	}
 
-	// return response
-	if expectedRequest.responseBody != nil {
-		if _, err = w.Write([]byte(*expectedRequest.responseBody)); err != nil {
+	// callback test
+	responseBody = expectedRequest.responseBody
+	if (expectedRequest.callbackTest != nil) {
+		if respBody := expectedRequest.callbackTest(r, requestBody); respBody != nil {
+			responseBody = respBody
+		}
+	}
+	// return response	
+	if responseBody != nil {
+		if _, err = w.Write([]byte(*responseBody)); err != nil {
 			http.Error(w, 
 				fmt.Sprintf("Error unable to return response: %s", err.Error()),
 				http.StatusBadRequest,
@@ -237,6 +245,11 @@ func (r *request) ExpectJSONRequest(body string) *request {
 
 func (r *request) ExpectRequest(body string) *request {
 	r.expectRequestBody = &body
+	return r
+}
+
+func (r *request) WithCallbackTest(cb func(r *http.Request, body string) *string) *request {
+	r.callbackTest = cb
 	return r
 }
 
