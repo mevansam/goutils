@@ -13,75 +13,33 @@ import (
 	"github.com/youmark/pkcs8"
 )
 
-// creates a private key, public key pair
-func CreateRSAKeyPair(password []byte) (string, string, error) {
-	
+type RSAKey struct {
+	key *rsa.PrivateKey
+}
+
+type RSAPublicKey struct {
+	key *rsa.PublicKey
+}
+
+// create a new RSA key
+func NewRSAKey() (*RSAKey, error) {
+
 	var (
 		err error
 		key *rsa.PrivateKey
-
-		privateKey, publicKey []byte
-		privateKeyPEM, publicKeyPEM strings.Builder
 	)
 
 	// create rsa key pair
 	if key, err = rsa.GenerateKey(rand.Reader, 4096); err != nil {
-		return "", "", err
+		return nil, err
 	}
-	// pem encoded private key
-	if password == nil {
-		if privateKey, err = x509.MarshalPKCS8PrivateKey(key); err  != nil {
-			return "", "", err
-		}	
-		if err := pem.Encode(
-			&privateKeyPEM, 
-			&pem.Block{
-				Type:  "RSA PRIVATE KEY",
-				Bytes: privateKey,
-			},
-		); err != nil {
-			return "", "", err
-		}
-	} else {
-		if privateKey, err = pkcs8.MarshalPrivateKey(key, password,
-			&pkcs8.Opts{
-				Cipher: pkcs8.AES256GCM,
-				KDFOpts: pkcs8.PBKDF2Opts{
-					SaltSize: 16, IterationCount: 512, HMACHash: crypto.SHA256,
-				},
-			},
-		); err  != nil {
-			return "", "", err
-		}	
-		if err := pem.Encode(
-			&privateKeyPEM, 
-			&pem.Block{
-				Type:  "ENCRYPTED PRIVATE KEY",
-				Bytes: privateKey,
-			},
-		); err != nil {
-			return "", "", err
-		}
-	}
-	// pem encoded public key
-	if publicKey, err = x509.MarshalPKIXPublicKey(key.Public()); err != nil {
-		return "", "", err
-	}
-	if err := pem.Encode(
-		&publicKeyPEM, 
-		&pem.Block{
-			Type:  "PUBLIC KEY",
-			Bytes: publicKey,
-		},
-	); err != nil {
-		return "", "", err
-	}
-
-	return privateKeyPEM.String(), publicKeyPEM.String(), err
+	return &RSAKey{
+		key: key,
+	}, nil
 }
 
-// unmarshals pem encoded string to rsa private key
-func PrivateKeyFromPEM(privateKeyPEM string, password []byte) (*rsa.PrivateKey, error) {
+// creates a new RSA key from PEM encoded data
+func NewRSAKeyFromPEM(privateKeyPEM string, password []byte) (*RSAKey, error) {
 
 	var (
 		err error
@@ -109,10 +67,119 @@ func PrivateKeyFromPEM(privateKeyPEM string, password []byte) (*rsa.PrivateKey, 
 	if privateKey, ok = pk.(*rsa.PrivateKey); !ok {
 		return nil, fmt.Errorf("pem encoded private key was not an rsa private key")
 	}
-	return privateKey, nil
+
+	return &RSAKey{
+		key: privateKey,
+	}, nil
 }
 
-func PublickKeyFromPEM(publicKeyPEM string) (*rsa.PublicKey, error) {
+// returns the encapsulated public key
+func (k *RSAKey) PublicKey() *RSAPublicKey {
+	return &RSAPublicKey{
+		key: &k.key.PublicKey,
+	}
+}
+
+// returns the PEM encoded public key
+func (k *RSAKey) GetPublicKeyPEM() (string, error) {
+
+	var (
+		err error
+
+		publicKey []byte
+		publicKeyPEM strings.Builder
+	)
+
+	if publicKey, err = x509.MarshalPKIXPublicKey(k.key.Public()); err != nil {
+		return "", err
+	}
+	if err := pem.Encode(
+		&publicKeyPEM, 
+		&pem.Block{
+			Type:  "PUBLIC KEY",
+			Bytes: publicKey,
+		},
+	); err != nil {
+		return "", err
+	}
+
+	return publicKeyPEM.String(), err
+}
+
+// decrypts cipher text encrypted with the public key with the private key
+func (k *RSAKey) Decrypt(ciphertext []byte) ([]byte, error) {
+
+	var (
+		err error
+
+		plaintext []byte
+	)
+	
+	if plaintext, err = rsa.DecryptOAEP(sha256.New(), rand.Reader, k.key, ciphertext, nil); err != nil {
+		return nil, err
+	}
+	return plaintext, nil
+}
+
+// returns the PEM encoded private key
+func (k *RSAKey) GetPrivateKeyPEM() (string, error) {
+	
+	var (
+		err error
+
+		privateKey []byte
+		privateKeyPEM strings.Builder
+	)
+
+	if privateKey, err = x509.MarshalPKCS8PrivateKey(k.key); err  != nil {
+		return "", err
+	}	
+	if err := pem.Encode(
+		&privateKeyPEM, 
+		&pem.Block{
+			Type:  "RSA PRIVATE KEY",
+			Bytes: privateKey,
+		},
+	); err != nil {
+		return "", err
+	}
+	return privateKeyPEM.String(), err
+}
+
+// returns the PEM encoded private key
+func (k *RSAKey) GetEncryptedPrivateKeyPEM(password []byte) (string, error) {
+		
+	var (
+		err error
+
+		privateKey []byte
+		privateKeyPEM strings.Builder
+	)
+
+	if privateKey, err = pkcs8.MarshalPrivateKey(k.key, password,
+		&pkcs8.Opts{
+			Cipher: pkcs8.AES256GCM,
+			KDFOpts: pkcs8.PBKDF2Opts{
+				SaltSize: 16, IterationCount: 512, HMACHash: crypto.SHA256,
+			},
+		},
+	); err  != nil {
+		return "", err
+	}	
+	if err := pem.Encode(
+		&privateKeyPEM, 
+		&pem.Block{
+			Type:  "ENCRYPTED PRIVATE KEY",
+			Bytes: privateKey,
+		},
+	); err != nil {
+		return "", err
+	}
+	return privateKeyPEM.String(), err
+}
+
+// creates a new RSA key from PEM encoded data
+func NewPublicKeyFromPEM(publicKeyPEM string) (*RSAPublicKey, error) {
 
 	var (
 		err error
@@ -134,11 +201,13 @@ func PublickKeyFromPEM(publicKeyPEM string) (*rsa.PublicKey, error) {
 	if publicKey, ok = pk.(*rsa.PublicKey); !ok {
 		return nil, fmt.Errorf("pem encoded public key was not an rsa public key")
 	}
-	return publicKey, nil
+	return &RSAPublicKey{
+		key: publicKey,
+	}, nil
 }
 
-// encrypts data with public key
-func EncryptWithPublicKey(plaintext []byte, pub *rsa.PublicKey) ([]byte, error) {
+// encrypts plain text using an RSA public key
+func (k *RSAPublicKey) Encrypt(plaintext []byte) ([]byte, error) {
 
 	var (
 		err error
@@ -146,23 +215,40 @@ func EncryptWithPublicKey(plaintext []byte, pub *rsa.PublicKey) ([]byte, error) 
 		ciphertext []byte
 	)
 
-	if ciphertext, err = rsa.EncryptOAEP(sha256.New(), rand.Reader, pub, plaintext, nil); err != nil {
+	if ciphertext, err = rsa.EncryptOAEP(sha256.New(), rand.Reader, k.key, plaintext, nil); err != nil {
 		return nil, err
 	}
 	return ciphertext, nil
 }
 
-// decrypts data with private key
-func DecryptWithPrivateKey(ciphertext []byte, priv *rsa.PrivateKey) ([]byte, error) {
-
+// creates a private key, public key pem encoded pair
+func CreateRSAKeyPair(password []byte) (string, string, error) {
+	
 	var (
 		err error
+		key *RSAKey
 
-		plaintext []byte
+		privateKeyPEM, publicKeyPEM string
 	)
-	
-	if plaintext, err = rsa.DecryptOAEP(sha256.New(), rand.Reader, priv, ciphertext, nil); err != nil {
-		return nil, err
+
+	// create rsa key	
+	if key, err = NewRSAKey(); err != nil {
+		return "", "", err
 	}
-	return plaintext, nil
+	// get pem encoded public key
+	if publicKeyPEM, err = key.GetPublicKeyPEM(); err != nil {
+		return "", "", err
+	}
+	// pem encoded private key
+	if password == nil {
+		if privateKeyPEM, err = key.GetPrivateKeyPEM(); err != nil {
+			return "", "", err
+		}
+	} else {
+		if privateKeyPEM, err = key.GetEncryptedPrivateKeyPEM(password); err != nil {
+			return "", "", err
+		}
+	}
+
+	return privateKeyPEM, publicKeyPEM, err
 }

@@ -1,7 +1,6 @@
 package crypto_test
 
 import (
-	"crypto/rsa"
 	"encoding/base64"
 
 	"github.com/mevansam/goutils/crypto"
@@ -17,10 +16,10 @@ var _ = Describe("RSA", func() {
 		var (
 			err error
 	
-			privateKeyPEM, publickKeyPEM string
-	
-			publicKey  *rsa.PublicKey
-			privateKey *rsa.PrivateKey
+			rsaPublicKey *crypto.RSAPublicKey
+			rsaKey       *crypto.RSAKey
+
+			publickKeyPEM, privateKeyPEM string	
 		)
 
 		It("creates a key pair and encrypts and decrypts some data", func() {
@@ -37,16 +36,16 @@ var _ = Describe("RSA", func() {
 				}
 				Expect(publickKeyPEM).To(HavePrefix( "-----BEGIN PUBLIC KEY-----\n"))
 	
-				privateKey, err = crypto.PrivateKeyFromPEM(privateKeyPEM, password)
+				rsaPublicKey, err = crypto.NewPublicKeyFromPEM(publickKeyPEM)
 				Expect(err).ToNot(HaveOccurred())
-				publicKey, err = crypto.PublickKeyFromPEM(publickKeyPEM)
+				rsaKey, err = crypto.NewRSAKeyFromPEM(privateKeyPEM, password)
 				Expect(err).ToNot(HaveOccurred())
 	
-				cipherText, err := crypto.EncryptWithPublicKey([]byte(plainText), publicKey)
+				cipherText, err := rsaPublicKey.Encrypt([]byte(plainText))
 				Expect(err).ToNot(HaveOccurred())
 				Expect(base64.StdEncoding.EncodeToString(cipherText)).ToNot(Equal(base64.StdEncoding.EncodeToString([]byte(plainText))))
 	
-				decryptedText, err := crypto.DecryptWithPrivateKey(cipherText, privateKey)
+				decryptedText, err := rsaKey.Decrypt(cipherText)
 				Expect(err).ToNot(HaveOccurred())
 	
 				Expect(string(decryptedText)).To(Equal(plainText))	
@@ -57,16 +56,16 @@ var _ = Describe("RSA", func() {
 		})
 
 		It("encrypts and decrypts some data using pre-created keys", func() {
-			privateKey, err = crypto.PrivateKeyFromPEM(testPrivateKeyPEM, []byte("MyCloudSpace Dev Key"))
+			rsaPublicKey, err = crypto.NewPublicKeyFromPEM(testPublicKeyPEM)
 			Expect(err).ToNot(HaveOccurred())
-			publicKey, err = crypto.PublickKeyFromPEM(testPublicKeyPEM)
+			rsaKey, err = crypto.NewRSAKeyFromPEM(testPrivateKeyPEM, []byte("MyCloudSpace Dev Key"))
 			Expect(err).ToNot(HaveOccurred())
 
-			cipherText, err := crypto.EncryptWithPublicKey([]byte(plainText), publicKey)
+			cipherText, err := rsaPublicKey.Encrypt([]byte(plainText))
 			Expect(err).ToNot(HaveOccurred())
 			Expect(base64.StdEncoding.EncodeToString(cipherText)).ToNot(Equal(base64.StdEncoding.EncodeToString([]byte(plainText))))
 
-			decryptedText, err := crypto.DecryptWithPrivateKey(cipherText, privateKey)
+			decryptedText, err := rsaKey.Decrypt(cipherText)
 			Expect(err).ToNot(HaveOccurred())
 
 			Expect(string(decryptedText)).To(Equal(plainText))
