@@ -6,8 +6,10 @@ import (
 	"crypto/rsa"
 	"crypto/sha256"
 	"crypto/x509"
+	"encoding/base64"
 	"encoding/pem"
 	"fmt"
+	"io/ioutil"
 	"strings"
 
 	"github.com/youmark/pkcs8"
@@ -19,6 +21,11 @@ type RSAKey struct {
 
 type RSAPublicKey struct {
 	key *rsa.PublicKey
+
+	// a key id used to identify the private key
+	// required to decrypt ciphertext encrypted
+	// using this public key.
+	keyID []byte
 }
 
 // create a new RSA key
@@ -40,6 +47,23 @@ func NewRSAKey() (*RSAKey, error) {
 
 // creates a new RSA key from PEM encoded data
 func NewRSAKeyFromPEM(privateKeyPEM string, password []byte) (*RSAKey, error) {
+	return newRSAKeyFromPEM([]byte(privateKeyPEM), password)
+}
+
+func NewRSAKeyFromFile(pemFilePath string, password []byte) (*RSAKey, error) {
+
+	var (
+		err     error
+		pemData []byte
+	)
+
+	if pemData, err = ioutil.ReadFile(pemFilePath); err != nil {
+		return nil, err
+	}
+	return newRSAKeyFromPEM(pemData, password)
+}
+
+func newRSAKeyFromPEM(privateKeyPEM []byte, password []byte) (*RSAKey, error) {
 
 	var (
 		err error
@@ -50,7 +74,7 @@ func NewRSAKeyFromPEM(privateKeyPEM string, password []byte) (*RSAKey, error) {
 	)
 
 	// retrieve private key from pem encoded string
-	privateKeyBlock, _ := pem.Decode([]byte(privateKeyPEM))
+	privateKeyBlock, _ := pem.Decode(privateKeyPEM)
 	if privateKeyBlock.Type == "RSA PRIVATE KEY" {
 		// extract rsa private key pem encoded data
 		if pk, err = x509.ParsePKCS8PrivateKey(privateKeyBlock.Bytes); err != nil {
@@ -121,6 +145,20 @@ func (k *RSAKey) Decrypt(ciphertext []byte) ([]byte, error) {
 	return plaintext, nil
 }
 
+// decrypts a base64 encoded encrypted string
+func (k *RSAKey) DecryptBase64(ciphertext string) ([]byte, error) {
+
+	var (
+		err        error
+		decoded [] byte
+	)
+
+	if decoded, err = base64.StdEncoding.DecodeString(ciphertext); err != nil {
+		return nil, nil
+	}
+	return k.Decrypt(decoded)
+}
+
 // returns the PEM encoded private key
 func (k *RSAKey) GetPrivateKeyPEM() (string, error) {
 	
@@ -180,6 +218,23 @@ func (k *RSAKey) GetEncryptedPrivateKeyPEM(password []byte) (string, error) {
 
 // creates a new RSA key from PEM encoded data
 func NewPublicKeyFromPEM(publicKeyPEM string) (*RSAPublicKey, error) {
+	return newPublicKeyFromPEM([]byte(publicKeyPEM))
+}
+
+func NewPublicKeyFromFile(pemFilePath string) (*RSAPublicKey, error) {
+
+	var (
+		err     error
+		pemData []byte
+	)
+
+	if pemData, err = ioutil.ReadFile(pemFilePath); err != nil {
+		return nil, err
+	}
+	return newPublicKeyFromPEM(pemData)
+}
+
+func newPublicKeyFromPEM(publicKeyPEM []byte) (*RSAPublicKey, error) {
 
 	var (
 		err error
@@ -190,7 +245,7 @@ func NewPublicKeyFromPEM(publicKeyPEM string) (*RSAPublicKey, error) {
 	)
 
 	// retrieve private key from pem encoded string
-	publicKeyBlock, _ := pem.Decode([]byte(publicKeyPEM))
+	publicKeyBlock, _ := pem.Decode(publicKeyPEM)
 	if publicKeyBlock.Type != "PUBLIC KEY" {
 		return nil, fmt.Errorf("unable to load public key block from pem encoded data")
 	}
@@ -206,6 +261,11 @@ func NewPublicKeyFromPEM(publicKeyPEM string) (*RSAPublicKey, error) {
 	}, nil
 }
 
+// sets the key id
+func (k *RSAPublicKey) SetKeyID(keyID string) {
+	k.keyID = []byte(keyID)
+}
+
 // encrypts plain text using an RSA public key
 func (k *RSAPublicKey) Encrypt(plaintext []byte) ([]byte, error) {
 
@@ -218,7 +278,29 @@ func (k *RSAPublicKey) Encrypt(plaintext []byte) ([]byte, error) {
 	if ciphertext, err = rsa.EncryptOAEP(sha256.New(), rand.Reader, k.key, plaintext, nil); err != nil {
 		return nil, err
 	}
+
 	return ciphertext, nil
+}
+
+// encrypt plain text and return the cipher text as base64 encoded text
+func (k *RSAPublicKey) EncryptBase64(plaintext []byte) (string, error) {
+
+	var (
+		err         error
+		ciphertext  []byte
+		encodeddata string
+	)
+
+	if ciphertext, err = k.Encrypt(plaintext); err != nil {
+		return "", err
+	}
+	encodeddata = base64.StdEncoding.EncodeToString([]byte(ciphertext))
+
+	if len(k.keyID) > 0 {
+		return string(k.keyID) + "|" + encodeddata, nil
+	} else {
+		return encodeddata, nil
+	}
 }
 
 // creates a private key, public key pem encoded pair

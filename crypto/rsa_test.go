@@ -2,6 +2,7 @@ package crypto_test
 
 import (
 	"encoding/base64"
+	"strings"
 
 	"github.com/mevansam/goutils/crypto"
 
@@ -63,9 +64,33 @@ var _ = Describe("RSA", func() {
 
 			cipherText, err := rsaPublicKey.Encrypt([]byte(plainText))
 			Expect(err).ToNot(HaveOccurred())
-			Expect(base64.StdEncoding.EncodeToString(cipherText)).ToNot(Equal(base64.StdEncoding.EncodeToString([]byte(plainText))))
+
+			Expect(base64.StdEncoding.EncodeToString(cipherText)).
+				ToNot(Equal(base64.StdEncoding.EncodeToString([]byte(plainText))))
 
 			decryptedText, err := rsaKey.Decrypt(cipherText)
+			Expect(err).ToNot(HaveOccurred())
+
+			Expect(string(decryptedText)).To(Equal(plainText))
+		})
+
+
+		It("encrypts and decrypts some data using pre-created keys", func() {
+			rsaKey, err = crypto.NewRSAKey()
+			Expect(err).ToNot(HaveOccurred())
+
+			rsaPublicKey = rsaKey.PublicKey()
+			rsaPublicKey.SetKeyID("test-key-id")
+
+			cipherText, err := rsaPublicKey.EncryptBase64([]byte(plainText))
+			Expect(err).ToNot(HaveOccurred())
+
+			cipherTextParts := strings.Split(cipherText, "|")
+			Expect(cipherTextParts[0]).To(Equal("test-key-id"))
+			Expect(base64.StdEncoding.EncodeToString([]byte(cipherTextParts[1]))).
+				ToNot(Equal(base64.StdEncoding.EncodeToString([]byte(plainText))))
+
+			decryptedText, err := rsaKey.DecryptBase64(cipherTextParts[1])
 			Expect(err).ToNot(HaveOccurred())
 
 			Expect(string(decryptedText)).To(Equal(plainText))
