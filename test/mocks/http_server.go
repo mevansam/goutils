@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"net/url"
 	"reflect"
 	"sync"
 
@@ -24,6 +25,8 @@ type MockHttpServer struct {
 type request struct {
 	callbackTest func(r *http.Request, body string) *string
 
+	expectPath        string
+	expectMethod      string
 	expectHeaders     []header
 	expectJSONRequest interface{}
 	expectRequestBody *string
@@ -41,7 +44,7 @@ func NewMockHttpServer(port int) *MockHttpServer {
 
 	ms := MockHttpServer{}
 	serveMux := http.NewServeMux()
-	serveMux.HandleFunc("/", ms.MockResponseReflector)
+	serveMux.HandleFunc("/", ms.mockResponseReflector)
 
 	ms.server = &http.Server{ 
 		Addr: fmt.Sprintf(":%d", port),
@@ -81,7 +84,7 @@ func (ms *MockHttpServer) PushRequest() *request {
 	return request
 }
 
-func (ms *MockHttpServer) MockResponseReflector(w http.ResponseWriter, r *http.Request) {
+func (ms *MockHttpServer) mockResponseReflector(w http.ResponseWriter, r *http.Request) {
 
 	var (
 		err error
@@ -90,6 +93,8 @@ func (ms *MockHttpServer) MockResponseReflector(w http.ResponseWriter, r *http.R
 		size         int64
 		requestBody  string
 		responseBody *string
+
+		requestURL *url.URL
 
 		hasError bool
 	)
@@ -117,6 +122,37 @@ func (ms *MockHttpServer) MockResponseReflector(w http.ResponseWriter, r *http.R
 	}
 	expectedRequest := ms.expectRequests[0]
 	ms.expectRequests = ms.expectRequests[1:]
+
+	// check path
+	if requestURL, err = url.ParseRequestURI(r.RequestURI); err != nil {
+		http.Error(w, 
+			fmt.Sprintf(
+				"Error parsing request url '%s': %s", 
+				r.RequestURI, err.Error(), 
+			), 
+			http.StatusBadRequest,
+		)
+	}
+	if len(expectedRequest.expectPath) > 0 && expectedRequest.expectPath != requestURL.Path {
+		http.Error(w, 
+			fmt.Sprintf(
+				"Expecting path '%s' but got %s", 
+				expectedRequest.expectPath, requestURL.Path, 
+			), 
+			http.StatusBadRequest,
+		)
+	}
+
+	// check method
+	if len(expectedRequest.expectMethod) > 0 && expectedRequest.expectMethod != r.Method {
+		http.Error(w, 
+			fmt.Sprintf(
+				"Expecting method '%s' but got %s", 
+				expectedRequest.expectMethod, r.Method,
+			), 
+			http.StatusBadRequest,
+		)
+	}
 
 	// check expected headers
 	checkHeaders := func(expectedHeaders []header) bool {
@@ -225,6 +261,16 @@ func (ms *MockHttpServer) MockResponseReflector(w http.ResponseWriter, r *http.R
 	if expectedRequest.httpError != nil {
 		http.Error(w, *expectedRequest.httpError, expectedRequest.httpCode)
 	}
+}
+
+func (r *request) ExpectPath(path string) *request {
+	r.expectPath = path
+	return r
+}
+
+func (r *request) ExpectMethod(method string) *request {
+	r.expectMethod = method
+	return r
 }
 
 func (r *request) ExpectHeader(name, value string) *request {
