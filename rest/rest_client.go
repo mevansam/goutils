@@ -95,7 +95,7 @@ func (r *Request) do(method string, response *Response) (err error) {
 		}
 	}()
 
-	logger.DebugMessage("Request.DoPost: processing request: #% v", r)
+	logger.DebugMessage("RestApiClient.Request.do(%s): processing request: #% v", method, r)
 	
 	// concatonate client url with request 
 	// path to create the complete url
@@ -156,7 +156,8 @@ func (r *Request) do(method string, response *Response) (err error) {
 	}
 	if logrus.IsLevelEnabled(logrus.TraceLevel) {
 		logger.TraceMessage(
-			"Request.DoPost: sending post request to:\n  url=%s,\n  headers=%# v,\n  body=%s",
+			"RestApiClient.Request.do(%s): sending request:\n  url=%s,\n  headers=%# v,\n  body=%s",
+			method,
 			httpRequest.URL.String(),
 			httpRequest.Header,
 			string(body),
@@ -199,7 +200,8 @@ func (r *Request) do(method string, response *Response) (err error) {
 	}
 	if logrus.IsLevelEnabled(logrus.TraceLevel) {
 		logger.TraceMessage(
-			"Request.DoPost: received post response:\n  url=%s,\n  status code=%d,\n  status=%s\n  headers=%# v,\n  body=%s",
+			"RestApiClient.Request.do(%s): received response:\n  url=%s,\n  status code=%d,\n  status=%s\n  headers=%# v,\n  body=%s",
+			method,
 			httpRequest.URL.String(),
 			httpResponse.StatusCode,
 			httpResponse.Status,
