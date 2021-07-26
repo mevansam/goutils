@@ -18,7 +18,7 @@ type MockHttpServer struct {
 	server     *http.Server
 	serverExit sync.WaitGroup
 
-	expectCommonHeaders []header
+	expectCommonHeaders []nv
 	expectRequests      []*request
 }
 
@@ -27,7 +27,8 @@ type request struct {
 
 	expectPath        string
 	expectMethod      string
-	expectHeaders     []header
+	expectHeaders     []nv
+	expectQueryArgs   []nv
 	expectJSONRequest interface{}
 	expectRequestBody *string
 	responseBody      *string
@@ -36,7 +37,7 @@ type request struct {
 	httpCode  int
 }
 
-type header struct {
+type nv struct {
 	name, value string
 }
 
@@ -75,7 +76,7 @@ func (ms *MockHttpServer) Stop() {
 }
 
 func (ms *MockHttpServer) ExpectCommonHeader(name, value string) {
-	ms.expectCommonHeaders = append(ms.expectCommonHeaders, header{name, value})
+	ms.expectCommonHeaders = append(ms.expectCommonHeaders, nv{name, value})
 }
 
 func (ms *MockHttpServer) PushRequest() *request {
@@ -87,7 +88,9 @@ func (ms *MockHttpServer) PushRequest() *request {
 func (ms *MockHttpServer) mockResponseReflector(w http.ResponseWriter, r *http.Request) {
 
 	var (
-		err error
+		err    error
+		exists bool	
+		value  []string
 
 		buffer       bytes.Buffer
 		size         int64
@@ -123,17 +126,8 @@ func (ms *MockHttpServer) mockResponseReflector(w http.ResponseWriter, r *http.R
 	expectedRequest := ms.expectRequests[0]
 	ms.expectRequests = ms.expectRequests[1:]
 
-	// check path
-	if requestURL, err = url.ParseRequestURI(r.RequestURI); err != nil {
-		http.Error(w, 
-			fmt.Sprintf(
-				"Error parsing request url '%s': %s", 
-				r.RequestURI, err.Error(), 
-			), 
-			http.StatusBadRequest,
-		)
-	}
-	if len(expectedRequest.expectPath) > 0 && expectedRequest.expectPath != requestURL.Path {
+	// check path	
+	if len(expectedRequest.expectPath) > 0 && expectedRequest.expectPath != r.URL.Path {
 		http.Error(w, 
 			fmt.Sprintf(
 				"Expecting path '%s' but got %s", 
@@ -155,12 +149,7 @@ func (ms *MockHttpServer) mockResponseReflector(w http.ResponseWriter, r *http.R
 	}
 
 	// check expected headers
-	checkHeaders := func(expectedHeaders []header) bool {
-
-		var (
-			value  []string
-			exists bool	
-		)
+	checkHeaders := func(expectedHeaders []nv) bool {
 
 		for _, header := range expectedHeaders {
 			if value, exists = r.Header[header.name]; !exists {
@@ -198,6 +187,32 @@ func (ms *MockHttpServer) mockResponseReflector(w http.ResponseWriter, r *http.R
 	// request headers
 	if hasError = checkHeaders(expectedRequest.expectHeaders); hasError {
 		return
+	}
+
+	// request args
+	queryArgs := r.URL.Query()
+	for _, arg := range expectedRequest.expectQueryArgs {
+		if value, exists = queryArgs[arg.name]; !exists || len(value) == 0{
+			http.Error(w, 
+				fmt.Sprintf(
+					"Error expected query arg '%s' is missing", 
+					arg.name,
+				), 
+				http.StatusBadRequest,
+			)
+			return
+		}
+		if value[0] != arg.value {
+			http.Error(w, 
+				fmt.Sprintf(
+					"Error expected header '%s' value does not match: expected '%s', got '%s'", 
+					arg.name, arg.value, value[0],
+				), 
+				http.StatusBadRequest,
+			)
+			return
+		}
+
 	}
 
 	// check expected request body
@@ -274,7 +289,12 @@ func (r *request) ExpectMethod(method string) *request {
 }
 
 func (r *request) ExpectHeader(name, value string) *request {
-	r.expectHeaders = append(r.expectHeaders, header{name, value})
+	r.expectHeaders = append(r.expectHeaders, nv{name, value})
+	return r
+}
+
+func (r *request) ExpectQueryArg(name, value string) *request {
+	r.expectQueryArgs = append(r.expectQueryArgs, nv{name, value})
 	return r
 }
 

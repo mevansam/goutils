@@ -23,10 +23,10 @@ type RestApiClient struct {
 }
 
 type Request struct {
-	Path    string
-	Headers NV
-	Params  NV
-	Body    interface{}
+	Path       string
+	Headers    NV
+	QueryArgs  NV
+	Body       interface{}
 
 	client *RestApiClient
 }
@@ -58,6 +58,9 @@ func (c *RestApiClient) WithRequest(request *Request) *Request {
 }
 
 func (r *Request) DoGet(response *Response) (err error) {
+	if r.Body != nil { 
+		return fmt.Errorf("a body was provided for the get request to path %s", r.Path)
+	}
 	return r.do("GET", response)
 }
 
@@ -144,9 +147,9 @@ func (r *Request) do(method string, response *Response) (err error) {
 	}
 
 	// add query params
-	if len(r.Params) > 0 {
+	if len(r.QueryArgs) > 0 {
 		query := httpRequest.URL.Query()
-		for n, v := range r.Params {
+		for n, v := range r.QueryArgs {
 			query.Add(n, v)
 		}
 		httpRequest.URL.RawQuery = query.Encode()	

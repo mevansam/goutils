@@ -20,8 +20,8 @@ var _ = Describe("Rest Client", func() {
 	)
 
 	type responseBody struct {
-		Resparg1 string `json:"resparg1,omitempty"`
-		Resparg2 string `json:"resparg2,omitempty"`
+		Resparg1 *string `json:"resparg1,omitempty"`
+		Resparg2 *string `json:"resparg2,omitempty"`
 	}
 	type responseError struct {
 		Message *string `json:"message,omitempty"`
@@ -44,6 +44,10 @@ var _ = Describe("Rest Client", func() {
 		testServer.ExpectCommonHeader("Content-Type", "application/json; charset=utf-8")
 		testServer.ExpectCommonHeader("Accept", "application/json; charset=utf-8")
 		testServer.Start()
+	})
+
+	AfterEach(func() {		
+		testServer.Stop()
 	})
 
 	It("sends a rest post request and receives a good response", func() {
@@ -75,15 +79,46 @@ var _ = Describe("Rest Client", func() {
 		Expect(err).ToNot((HaveOccurred()))
 
 		Expect(response.StatusCode).To(Equal(200))
-		Expect(responseBody.Resparg1).To(Equal("respvalue1"))
-		Expect(responseBody.Resparg2).To(Equal("respvalue2"))
+		Expect(*responseBody.Resparg1).To(Equal("respvalue1"))
+		Expect(*responseBody.Resparg2).To(Equal("respvalue2"))
 		Expect(responseError.Message).To(BeNil())
 	})
 
-	AfterEach(func() {		
-		testServer.Stop()
+	It("sends a rest get request and receives an error response", func() {
+
+		testServer.PushRequest().
+			ExpectPath("/api/b").
+			ExpectMethod("GET").
+			ExpectQueryArg("arg1", "value1").
+			ExpectQueryArg("arg2", "value2").
+			RespondWithError(restErrorResponse, 400)
+
+		responseBody := responseBody{}
+		responseError := responseError{}
+		response := &rest.Response{
+			Body: &responseBody,
+			Error: &responseError,
+		}		
+
+		restApiClient := rest.NewRestApiClient(context.Background(), "http://localhost:9096/api")
+		err = restApiClient.WithRequest(
+			&rest.Request{
+				Path: "/b",
+				QueryArgs: rest.NV{
+					"arg1": "value1",
+					"arg2": "value2",
+				},
+			},
+		).DoGet(response)
+		Expect(err).To((HaveOccurred()))
+
+		Expect(response.StatusCode).To(Equal(400))
+		Expect(responseBody.Resparg1).To(BeNil())
+		Expect(responseBody.Resparg2).To(BeNil())
+		Expect(*responseError.Message).To(Equal("test error"))
 	})
 })
 
 const restRequest = `{"arg1":"value1","arg2":"value2","arg3":"value3"}`
 const restResponse = `{"resparg1":"respvalue1","resparg2":"respvalue2"}`
+const restErrorResponse = `{"message":"test error"}`
