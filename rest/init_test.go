@@ -10,7 +10,7 @@ import (
 	"github.com/onsi/gomega/gexec"
 )
 
-func TestCrypto(t *testing.T) {
+func TestRest(t *testing.T) {
 	logger.Initialize()
 
 	RegisterFailHandler(Fail)

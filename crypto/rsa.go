@@ -25,7 +25,7 @@ type RSAPublicKey struct {
 	// a key id used to identify the private key
 	// required to decrypt ciphertext encrypted
 	// using this public key.
-	keyID []byte
+	KeyID string
 }
 
 // create a new RSA key
@@ -263,7 +263,7 @@ func newPublicKeyFromPEM(publicKeyPEM []byte) (*RSAPublicKey, error) {
 
 // sets the key id
 func (k *RSAPublicKey) SetKeyID(keyID string) {
-	k.keyID = []byte(keyID)
+	k.KeyID = keyID
 }
 
 // encrypts plain text using an RSA public key
@@ -296,8 +296,8 @@ func (k *RSAPublicKey) EncryptBase64(plaintext []byte) (string, error) {
 	}
 	encodeddata = base64.StdEncoding.EncodeToString([]byte(ciphertext))
 
-	if len(k.keyID) > 0 {
-		return string(k.keyID) + "|" + encodeddata, nil
+	if len(k.KeyID) > 0 {
+		return k.KeyID + "|" + encodeddata, nil
 	} else {
 		return encodeddata, nil
 	}

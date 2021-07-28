@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"log"
 	"net/http"
-	"net/url"
 	"reflect"
 	"sync"
 
@@ -85,6 +84,10 @@ func (ms *MockHttpServer) PushRequest() *request {
 	return request
 }
 
+func (ms *MockHttpServer) Done() bool {
+	return len(ms.expectRequests) == 0
+}
+
 func (ms *MockHttpServer) mockResponseReflector(w http.ResponseWriter, r *http.Request) {
 
 	var (
@@ -96,8 +99,6 @@ func (ms *MockHttpServer) mockResponseReflector(w http.ResponseWriter, r *http.R
 		size         int64
 		requestBody  string
 		responseBody *string
-
-		requestURL *url.URL
 
 		hasError bool
 	)
@@ -131,7 +132,7 @@ func (ms *MockHttpServer) mockResponseReflector(w http.ResponseWriter, r *http.R
 		http.Error(w, 
 			fmt.Sprintf(
 				"Expecting path '%s' but got %s", 
-				expectedRequest.expectPath, requestURL.Path, 
+				expectedRequest.expectPath, r.URL.Path, 
 			), 
 			http.StatusBadRequest,
 		)

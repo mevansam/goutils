@@ -37,6 +37,8 @@ type Response struct {
 
 	Body  interface{}
 	Error interface{}
+
+	RawErrorMessage string
 }
 
 type NV map[string]string
@@ -57,29 +59,30 @@ func (c *RestApiClient) WithRequest(request *Request) *Request {
 	return request
 }
 
-func (r *Request) DoGet(response *Response) (err error) {
+func (r *Request) DoGet(response *Response) error {
 	if r.Body != nil { 
 		return fmt.Errorf("a body was provided for the get request to path %s", r.Path)
 	}
 	return r.do("GET", response)
 }
 
-func (r *Request) DoPost(response *Response) (err error) {
+func (r *Request) DoPost(response *Response) error {
 	return r.do("POST", response)
 }
 
-func (r *Request) DoPut(response *Response) (err error) {
+func (r *Request) DoPut(response *Response) error {
 	return r.do("PUT", response)
 }
 
-func (r *Request) DoDelete(response *Response) (err error) {
+func (r *Request) DoDelete(response *Response) error {
 	return r.do("DELETE", response)
 }
 
 func (r *Request) do(method string, response *Response) (err error) {
 
 	var (
-		url strings.Builder
+		err0 error
+		url  strings.Builder
 		
 		body   []byte
 		reader io.Reader
@@ -88,12 +91,6 @@ func (r *Request) do(method string, response *Response) (err error) {
 		httpRequest  *http.Request
 		httpResponse *http.Response
 	)
-
-	defer func() {
-		if r := recover(); r != nil {
-			err = r.(error)
-		}
-	}()
 
 	logger.DebugMessage("RestApiClient.Request.do(%s): processing request: #% v", method, r)
 	
@@ -125,9 +122,7 @@ func (r *Request) do(method string, response *Response) (err error) {
 			reader, writer = io.Pipe()
 			go func() {
 				defer writer.Close()
-				if err = json.NewEncoder(writer).Encode(&r.Body); err != nil {
-					panic(err)
-				}
+				err0 = json.NewEncoder(writer).Encode(&r.Body)
 			}()	
 		}	
 	} else {
@@ -166,6 +161,9 @@ func (r *Request) do(method string, response *Response) (err error) {
 	if httpResponse, err = r.client.httpClient.Do(httpRequest); err != nil {
 		return err
 	}
+	if err0 != nil {
+		return err0
+	}
 	defer httpResponse.Body.Close()
 
 	response.StatusCode = httpResponse.StatusCode
@@ -178,8 +176,8 @@ func (r *Request) do(method string, response *Response) (err error) {
 		}
 	}
 
-	decodeBody := func(r io.Reader, v interface{}) error {
-		if logrus.IsLevelEnabled(logrus.TraceLevel) {
+	decodeBody := func(r io.Reader, v interface{}, buffer bool) error {
+		if buffer || logrus.IsLevelEnabled(logrus.TraceLevel) {
 			// retrieve response body to output to trace log
 			// before unmarshalling to the response body value
 			if body, err = ioutil.ReadAll(r); err != nil {
@@ -190,14 +188,18 @@ func (r *Request) do(method string, response *Response) (err error) {
 			return json.NewDecoder(r).Decode(v)
 		}
 	}	
+
+	// handle error responses
 	if httpResponse.StatusCode < http.StatusOK || httpResponse.StatusCode >= http.StatusBadRequest {		
-		if err = decodeBody(httpResponse.Body, response.Error); err != nil {
+		if err = decodeBody(httpResponse.Body, response.Error, true); err != nil {
 			logger.DebugMessage("ERROR: Message body parse failed: %s", err.Error())
+			response.RawErrorMessage = string(body)
 		}
 		err = fmt.Errorf("api error: %d - %s", httpResponse.StatusCode, httpResponse.Status)
 	}	else {
-		err = decodeBody(httpResponse.Body, response.Body)
+		err = decodeBody(httpResponse.Body, response.Body, false)
 	}
+
 	if logrus.IsLevelEnabled(logrus.TraceLevel) {
 		logger.TraceMessage(
 			"RestApiClient.Request.do(%s): received response:\n  url=%s,\n  status code=%d,\n  status=%s\n  headers=%# v,\n  body=%s",
@@ -211,4 +213,3 @@ func (r *Request) do(method string, response *Response) (err error) {
 	}
 	return err
 }
-
