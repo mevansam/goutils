@@ -85,7 +85,7 @@ func (key *ECDHKey) PublicKeyForNodeJS() string {
 
 // retrieves a shared secret with a public 
 // key of an ecdh key created by nodejs 
-func (key *ECDHKey) SharedSecretFromNodeJS(otherPublicKey string) (string, error) {
+func (key *ECDHKey) SharedSecretFromNodeJS(otherPublicKey string) ([]byte, error) {
 
 	var (
 		err error
@@ -97,7 +97,7 @@ func (key *ECDHKey) SharedSecretFromNodeJS(otherPublicKey string) (string, error
 
 	// decode and extract ecdh public key
 	if buffer, err = base64.StdEncoding.DecodeString(otherPublicKey); err != nil {
-		return "", nil
+		return nil, nil
 	}
 	X.SetBytes(buffer[1:33])
 	Y.SetBytes(buffer[33:])
@@ -108,5 +108,5 @@ func (key *ECDHKey) SharedSecretFromNodeJS(otherPublicKey string) (string, error
 	}
 
 	x, _ := publicKey.Curve.ScalarMult(publicKey.X, publicKey.Y, key.privateKey.D.Bytes())
-	return base64.StdEncoding.EncodeToString(x.Bytes()), nil
+	return x.Bytes(), nil
 }
