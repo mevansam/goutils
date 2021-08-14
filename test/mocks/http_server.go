@@ -22,7 +22,7 @@ type MockHttpServer struct {
 }
 
 type request struct {
-	callbackTest func(r *http.Request, body string) *string
+	callbackTest func(w http.ResponseWriter, r *http.Request, body string) *string
 
 	expectPath        string
 	expectMethod      string
@@ -136,6 +136,7 @@ func (ms *MockHttpServer) mockResponseReflector(w http.ResponseWriter, r *http.R
 			), 
 			http.StatusBadRequest,
 		)
+		return
 	}
 
 	// check method
@@ -147,6 +148,7 @@ func (ms *MockHttpServer) mockResponseReflector(w http.ResponseWriter, r *http.R
 			), 
 			http.StatusBadRequest,
 		)
+		return
 	}
 
 	// check expected headers
@@ -213,7 +215,6 @@ func (ms *MockHttpServer) mockResponseReflector(w http.ResponseWriter, r *http.R
 			)
 			return
 		}
-
 	}
 
 	// check expected request body
@@ -259,11 +260,11 @@ func (ms *MockHttpServer) mockResponseReflector(w http.ResponseWriter, r *http.R
 	// callback test
 	responseBody = expectedRequest.responseBody
 	if (expectedRequest.callbackTest != nil) {
-		if respBody := expectedRequest.callbackTest(r, requestBody); respBody != nil {
+		if respBody := expectedRequest.callbackTest(w, r, requestBody); respBody != nil {
 			responseBody = respBody
 		}
 	}
-	// return response	
+	// return response
 	if responseBody != nil {
 		if _, err = w.Write([]byte(*responseBody)); err != nil {
 			http.Error(w, 
@@ -315,7 +316,7 @@ func (r *request) ExpectRequest(body string) *request {
 	return r
 }
 
-func (r *request) WithCallbackTest(cb func(r *http.Request, body string) *string) *request {
+func (r *request) WithCallbackTest(cb func(w http.ResponseWriter, r *http.Request, body string) *string) *request {
 	r.callbackTest = cb
 	return r
 }
