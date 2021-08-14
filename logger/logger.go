@@ -19,6 +19,8 @@ func Initialize() {
 		SetConsoleLogger(log.DebugLevel)
 	case "trace":
 		SetConsoleLogger(log.TraceLevel)
+	default:
+		SetConsoleLogger(log.ErrorLevel)
 	}
 }
 
