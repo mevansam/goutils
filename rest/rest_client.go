@@ -192,8 +192,8 @@ func (r *Request) do(method string, response *Response) (err error) {
 	// handle error responses
 	if httpResponse.StatusCode < http.StatusOK || httpResponse.StatusCode >= http.StatusBadRequest {		
 		if err = decodeBody(httpResponse.Body, response.Error, true); err != nil {
-			logger.DebugMessage("ERROR: Message body parse failed: %s", err.Error())
 			response.RawErrorMessage = string(body)
+			logger.DebugMessage("RestApiClient.Request.do(%s): WARNING! Message body parse failed. Response body: %s", method, body)
 		}
 		err = fmt.Errorf("api error: %d - %s", httpResponse.StatusCode, httpResponse.Status)
 	}	else {
