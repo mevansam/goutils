@@ -44,7 +44,7 @@ func (c *Crypt) EncryptB64(plainData string) (string, error) {
 	if cipherData, err = c.Encrypt([]byte(plainData)); err != nil {
 		return "", err
 	}
-	return base64.StdEncoding.EncodeToString([]byte(cipherData)), nil
+	return base64.StdEncoding.EncodeToString(cipherData), nil
 }
 
 func (c *Crypt) Encrypt(plainData []byte) ([]byte, error) {

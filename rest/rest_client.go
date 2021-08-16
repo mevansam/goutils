@@ -102,6 +102,12 @@ func (r *Request) do(method string, response *Response) (err error) {
 	)
 
 	logger.TraceMessage("RestApiClient.Request.do(%s): processing request: #% v", method, r)
+
+	if r.client.authCrypt != nil {
+		if authToken, err = NewAuthToken(r.client.authCrypt); err != nil {
+			return err
+		}
+	}
 	
 	// concatonate client url with request 
 	// path to create the complete url
@@ -133,7 +139,12 @@ func (r *Request) do(method string, response *Response) (err error) {
 				defer writer.Close()
 				err0 = json.NewEncoder(writer).Encode(&r.Body)
 			}()	
-		}	
+		}
+		if authToken != nil {
+			if reader, err = authToken.EncryptPayload(reader); err != nil {
+				return err
+			}
+		}
 	} else {
 		reader = nil
 	}
@@ -154,9 +165,8 @@ func (r *Request) do(method string, response *Response) (err error) {
 	// add an encrypted authentication header to
 	// the request to be validated on the server
 	// side
-	if r.client.authCrypt != nil {
-		var encryptedReqToken string
-		authToken = NewAuthToken(r.client.authCrypt)
+	if authToken != nil {
+		var encryptedReqToken string		
 		if encryptedReqToken, err = authToken.GetEncryptedToken(); err != nil {
 			return err
 		}
@@ -218,8 +228,36 @@ func (r *Request) do(method string, response *Response) (err error) {
 			logger.DebugMessage("RestApiClient.Request.do(%s): WARNING! Message body parse failed. Response body: %s", method, body)
 		}
 		err = fmt.Errorf("api error: %d - %s", httpResponse.StatusCode, httpResponse.Status)
-	}	else {
-		err = decodeBody(httpResponse.Body, response.Body, false)
+	}
+
+	// validate expected response auth token 
+	// if a request auth token was created
+	if err == nil {
+		respBody := httpResponse.Body
+
+		if authToken != nil {
+			if encryptedRespToken, exists := response.Headers["X-Auth-Token-Response"]; exists {
+
+				if isTokenResponseValid, err := authToken.IsTokenResponseValid(encryptedRespToken); err != nil || !isTokenResponseValid {
+					if err != nil {
+						logger.DebugMessage(
+							"RestApiClient.Request.do(%s): ERROR! Failed to validate response auth token: %s",
+							method, err.Error(),
+						)
+					}
+					response.Error = nil
+					return fmt.Errorf("response auth token is not valid")	
+				}
+				if respBody, err = authToken.DecryptPayload(respBody); err != nil {
+					return err
+				}
+
+			} else {
+				response.Error = nil
+				return fmt.Errorf("response auth token header missing")
+			}
+		}
+		err = decodeBody(respBody, response.Body, false)
 	}
 
 	if logrus.IsLevelEnabled(logrus.TraceLevel) {
@@ -234,24 +272,5 @@ func (r *Request) do(method string, response *Response) (err error) {
 		)
 	}
 
-	// validate expected response auth token 
-	// if a request auth token was created
-	if authToken != nil {		
-		if encryptedRespToken, exists := response.Headers["X-Auth-Token-Response"]; exists {
-			if isTokenResponseValid, err := authToken.IsTokenResponseValid(encryptedRespToken); err != nil || !isTokenResponseValid {
-				if err != nil {
-					logger.DebugMessage(
-						"RestApiClient.Request.do(%s): ERROR! Failed to validate response auth token: %s",
-						method, err.Error(),
-					)
-				}
-				response.Error = nil
-				return fmt.Errorf("response auth token is not valid")	
-			}
-		} else {
-			response.Error = nil
-			return fmt.Errorf("response auth token header missing")
-		}
-	}	
 	return err
 }

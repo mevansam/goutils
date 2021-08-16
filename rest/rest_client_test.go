@@ -128,9 +128,7 @@ var _ = Describe("Rest Client", func() {
 			ExpectPath("/api/a").
 			ExpectMethod("POST").
 			ExpectHeader("Api-Key", "12345").
-			ExpectJSONRequest(restRequest).
-			WithCallbackTest(test_mocks.HandleAuthHeaders(mockAuthCrypt)).
-			RespondWith(restResponse)
+			WithCallbackTest(test_mocks.HandleAuthHeaders(mockAuthCrypt, restRequest, restResponse))
 
 		responseBody := responseBody{}
 		responseError := responseError{}
@@ -166,14 +164,12 @@ var _ = Describe("Rest Client", func() {
 			ExpectPath("/api/a").
 			ExpectMethod("POST").
 			ExpectHeader("Api-Key", "12345").
-			ExpectJSONRequest(restRequest).
 			WithCallbackTest(func(w http.ResponseWriter, r *http.Request, body string) *string {
 				encryptedAuthToken := r.Header["X-Auth-Token"]
 				Expect(encryptedAuthToken).NotTo(BeNil())		
 				w.Header()["X-Auth-Token-Response"] = []string{ "bad response auth token" }
 				return nil
-			}).
-			RespondWith(restResponse)
+			})
 	
 		responseBody := responseBody{}
 		responseError := responseError{}
