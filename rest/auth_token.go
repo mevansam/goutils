@@ -8,12 +8,10 @@ import (
 	"fmt"
 	"hash"
 	"io"
-	"strconv"
 	"strings"
 	"sync"
 
 	crypto_rand "crypto/rand"
-	math_rand "math/rand"
 
 	"github.com/mevansam/goutils/logger"
 	"github.com/minio/highwayhash"
@@ -30,12 +28,6 @@ type AuthToken struct {
 	// associated with this token
 	hashKey         []byte
 	payloadChecksum string
-
-	// validates that the request token was validated
-	// by the service
-	requestValue1, 
-	requestValue2, 
-	expectedResponseValue int
 }
 
 // an encrypted payload that is hashed for 
@@ -53,13 +45,8 @@ func NewAuthToken(authCrypt AuthCrypt) (*AuthToken, error) {
 
 	authToken := &AuthToken{
 		authCrypt: authCrypt,
-
-		requestValue1: math_rand.Intn(65535),
-		requestValue2: math_rand.Intn(65535),
-
 		isRequestToken: true,
 	}
-	authToken.expectedResponseValue = authToken.requestValue1 ^ authToken.requestValue2
 
 	authToken.hashKey = make([]byte, 32)
 	if _, err = io.ReadFull(crypto_rand.Reader, authToken.hashKey); err != nil {
@@ -95,7 +82,7 @@ func NewValidatedResponseToken(requestAuthToken string, authCrypt AuthCrypt) (*A
 		requestToken)
 
 	tokenParts := strings.Split(requestToken, "|")
-	if len(tokenParts) != 5 || tokenParts[0] != authCrypt.AuthTokenKey() {
+	if len(tokenParts) != 3 || tokenParts[0] != authCrypt.AuthTokenKey() {
 		return nil, fmt.Errorf("invalid request token")
 	}
 	if authToken.hashKey, err = hex.DecodeString(tokenParts[1]); err != nil {
@@ -104,13 +91,6 @@ func NewValidatedResponseToken(requestAuthToken string, authCrypt AuthCrypt) (*A
 	if authToken.payloadChecksum = tokenParts[2]; err != nil {
 		return nil, fmt.Errorf("invalid request token. error parsing hash key: %s", err.Error())
 	}
-	if authToken.requestValue1, err = strconv.Atoi(tokenParts[3]); err != nil {
-		return nil, fmt.Errorf("invalid request token. error parsing request value1: %s", err.Error())
-	}
-	if authToken.requestValue2, err = strconv.Atoi(tokenParts[4]); err != nil {
-		return nil, fmt.Errorf("invalid request token. error parsing request value1: %s", err.Error())
-	}
-	authToken.expectedResponseValue = authToken.requestValue1 ^ authToken.requestValue2
 	return authToken, nil
 }
 
@@ -131,16 +111,10 @@ func (t *AuthToken) GetEncryptedToken() (string, error) {
 			token.WriteString(hex.EncodeToString(t.hashKey))
 			token.WriteByte('|')
 			token.WriteString(t.payloadChecksum)
-			token.WriteByte('|')
-			token.WriteString(strconv.Itoa(t.requestValue1))
-			token.WriteByte('|')
-			token.WriteString(strconv.Itoa(t.requestValue2))	
 		} else {
 			token.WriteString(t.authCrypt.AuthTokenKey())
 			token.WriteByte('|')
 			token.WriteString(t.payloadChecksum)
-			token.WriteByte('|')
-			token.WriteString(strconv.Itoa(t.expectedResponseValue))
 		}
 	
 		return crypt.EncryptB64(token.String())	
@@ -154,7 +128,6 @@ func (t *AuthToken) IsTokenResponseValid(authTokenResponse string) (bool, error)
 		err error
 
 		respToken string
-		valResp   int
 	)
 	
 	if t.isRequestToken {
@@ -168,13 +141,10 @@ func (t *AuthToken) IsTokenResponseValid(authTokenResponse string) (bool, error)
 		logger.TraceMessage("AuthToken.IsTokenResponseValid: Validating response token '%s'", respToken)
 	
 		tokenParts := strings.Split(respToken, "|")
-		if len(tokenParts) == 3 && tokenParts[0] == t.authCrypt.AuthTokenKey() {
-			if valResp, err = strconv.Atoi(tokenParts[2]); err != nil {
-				return false, err
-			}
+		if len(tokenParts) == 2 && tokenParts[0] == t.authCrypt.AuthTokenKey() {
 			t.payloadChecksum = tokenParts[1]
-			return valResp == t.expectedResponseValue, nil
-		}	
+			return true, nil
+		}
 		return false, nil
 	} else {
 		return false, fmt.Errorf("invalid token test for response token")
