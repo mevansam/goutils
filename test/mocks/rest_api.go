@@ -73,7 +73,7 @@ func HandleAuthHeaders(mockAuthCrypt rest.AuthCrypt, request, response string) (
 			payload, err = io.ReadAll(payloadReader.(io.Reader))
 			Expect(err).ToNot(HaveOccurred())	
 		} 
-		Expect(string(payload)).To(Equal(request))
+		Expect(strings.TrimSuffix(string(payload), "\n")).To(Equal(request))
 
 		// get encrypted response body
 		responseBody := []byte{}
