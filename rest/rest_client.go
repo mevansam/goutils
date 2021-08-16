@@ -20,6 +20,8 @@ type RestApiClient struct {
 
 	url        string
 	httpClient *http.Client
+
+	authCrypt AuthCrypt
 }
 
 type Request struct {
@@ -54,7 +56,12 @@ func NewRestApiClient(ctx context.Context, url string) *RestApiClient {
 	}
 }
 
-func (c *RestApiClient) WithRequest(request *Request) *Request {
+func (c *RestApiClient) WithAuthCrypt(authCrypt AuthCrypt) *RestApiClient {
+	c.authCrypt = authCrypt
+	return c
+}
+
+func (c *RestApiClient) NewRequest(request *Request) *Request {
 	request.client = c
 	return request
 }
@@ -88,11 +95,13 @@ func (r *Request) do(method string, response *Response) (err error) {
 		reader io.Reader
 		writer io.WriteCloser
 
+		authToken *AuthToken
+
 		httpRequest  *http.Request
 		httpResponse *http.Response
 	)
 
-	logger.DebugMessage("RestApiClient.Request.do(%s): processing request: #% v", method, r)
+	logger.TraceMessage("RestApiClient.Request.do(%s): processing request: #% v", method, r)
 	
 	// concatonate client url with request 
 	// path to create the complete url
@@ -139,6 +148,19 @@ func (r *Request) do(method string, response *Response) (err error) {
 	httpRequest.Header.Set("Accept", "application/json; charset=utf-8")
 	for n, v := range r.Headers {
 		httpRequest.Header.Set(n, v)
+	}
+
+	// if client has an authenticated crypt then
+	// add an encrypted authentication header to
+	// the request to be validated on the server
+	// side
+	if r.client.authCrypt != nil {
+		var encryptedReqToken string
+		authToken = NewAuthToken(r.client.authCrypt)
+		if encryptedReqToken, err = authToken.GetEncryptedToken(); err != nil {
+			return err
+		}
+		httpRequest.Header.Set("X-Auth-Token", encryptedReqToken)
 	}
 
 	// add query params
@@ -211,5 +233,25 @@ func (r *Request) do(method string, response *Response) (err error) {
 			string(body),
 		)
 	}
+
+	// validate expected response auth token 
+	// if a request auth token was created
+	if authToken != nil {		
+		if encryptedRespToken, exists := response.Headers["X-Auth-Token-Response"]; exists {
+			if isTokenResponseValid, err := authToken.IsTokenResponseValid(encryptedRespToken); err != nil || !isTokenResponseValid {
+				if err != nil {
+					logger.DebugMessage(
+						"RestApiClient.Request.do(%s): ERROR! Failed to validate response auth token: %s",
+						method, err.Error(),
+					)
+				}
+				response.Error = nil
+				return fmt.Errorf("response auth token is not valid")	
+			}
+		} else {
+			response.Error = nil
+			return fmt.Errorf("response auth token header missing")
+		}
+	}	
 	return err
 }

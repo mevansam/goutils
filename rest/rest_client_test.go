@@ -2,10 +2,11 @@ package rest_test
 
 import (
 	"context"
+	"net/http"
 
 	"github.com/mevansam/goutils/rest"
 
-	test_server "github.com/mevansam/goutils/test/mocks"
+	test_mocks "github.com/mevansam/goutils/test/mocks"
 
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
@@ -16,7 +17,7 @@ var _ = Describe("Rest Client", func() {
 	var (
 		err error
 
-		testServer *test_server.MockHttpServer
+		testServer *test_mocks.MockHttpServer
 	)
 
 	type responseBody struct {
@@ -40,7 +41,7 @@ var _ = Describe("Rest Client", func() {
 	BeforeEach(func() {
 
 		// start test server
-		testServer = test_server.NewMockHttpServer(9096)
+		testServer = test_mocks.NewMockHttpServer(9096)
 		testServer.ExpectCommonHeader("Content-Type", "application/json; charset=utf-8")
 		testServer.ExpectCommonHeader("Accept", "application/json; charset=utf-8")
 		testServer.Start()
@@ -67,7 +68,7 @@ var _ = Describe("Rest Client", func() {
 		}		
 
 		restApiClient := rest.NewRestApiClient(context.Background(), "http://localhost:9096/api")
-		err = restApiClient.WithRequest(
+		err = restApiClient.NewRequest(
 			&rest.Request{
 				Path: "/a",
 				Headers: rest.NV{
@@ -101,7 +102,7 @@ var _ = Describe("Rest Client", func() {
 		}		
 
 		restApiClient := rest.NewRestApiClient(context.Background(), "http://localhost:9096/api")
-		err = restApiClient.WithRequest(
+		err = restApiClient.NewRequest(
 			&rest.Request{
 				Path: "/b",
 				QueryArgs: rest.NV{
@@ -116,6 +117,83 @@ var _ = Describe("Rest Client", func() {
 		Expect(responseBody.Resparg1).To(BeNil())
 		Expect(responseBody.Resparg2).To(BeNil())
 		Expect(*responseError.Message).To(Equal("test error"))
+	})
+
+	It("sends an authenticated rest post request and receives a good response", func() {
+
+		mockAuthCrypt, err := test_mocks.NewMockAuthCrypt("some key")
+		Expect(err).ToNot(HaveOccurred())
+
+		testServer.PushRequest().
+			ExpectPath("/api/a").
+			ExpectMethod("POST").
+			ExpectHeader("Api-Key", "12345").
+			ExpectJSONRequest(restRequest).
+			WithCallbackTest(test_mocks.HandleAuthHeaders(mockAuthCrypt)).
+			RespondWith(restResponse)
+
+		responseBody := responseBody{}
+		responseError := responseError{}
+		response := &rest.Response{
+			Body: &responseBody,
+			Error: &responseError,
+		}		
+
+		restApiClient := rest.NewRestApiClient(context.Background(), "http://localhost:9096/api").WithAuthCrypt(mockAuthCrypt)
+		err = restApiClient.NewRequest(
+			&rest.Request{
+				Path: "/a",
+				Headers: rest.NV{
+					"Api-Key": "12345",
+				},
+				Body: &requestBody,
+			},
+		).DoPost(response)
+		Expect(err).ToNot(HaveOccurred())
+
+		Expect(response.StatusCode).To(Equal(200))
+		Expect(*responseBody.Resparg1).To(Equal("respvalue1"))
+		Expect(*responseBody.Resparg2).To(Equal("respvalue2"))
+		Expect(responseError.Message).To(BeNil())
+	})
+
+	It("sends an authenticated rest post request and receives a bad response auth header", func() {
+
+		mockAuthCrypt, err := test_mocks.NewMockAuthCrypt("some key")
+		Expect(err).ToNot(HaveOccurred())
+	
+		testServer.PushRequest().
+			ExpectPath("/api/a").
+			ExpectMethod("POST").
+			ExpectHeader("Api-Key", "12345").
+			ExpectJSONRequest(restRequest).
+			WithCallbackTest(func(w http.ResponseWriter, r *http.Request, body string) *string {
+				encryptedAuthToken := r.Header["X-Auth-Token"]
+				Expect(encryptedAuthToken).NotTo(BeNil())		
+				w.Header()["X-Auth-Token-Response"] = []string{ "bad response auth token" }
+				return nil
+			}).
+			RespondWith(restResponse)
+	
+		responseBody := responseBody{}
+		responseError := responseError{}
+		response := &rest.Response{
+			Body: &responseBody,
+			Error: &responseError,
+		}		
+	
+		restApiClient := rest.NewRestApiClient(context.Background(), "http://localhost:9096/api").WithAuthCrypt(mockAuthCrypt)
+		err = restApiClient.NewRequest(
+			&rest.Request{
+				Path: "/a",
+				Headers: rest.NV{
+					"Api-Key": "12345",
+				},
+				Body: &requestBody,
+			},
+		).DoPost(response)
+		Expect(err).To(HaveOccurred())
+		Expect(err.Error()).To(Equal("response auth token is not valid"))
 	})
 })
 
