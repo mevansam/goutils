@@ -163,7 +163,7 @@ func (t *AuthToken) EncryptPayload(payload io.Reader) (io.Reader, error) {
 		body, encryptedBody []byte
 	)
 
-	if hash, err = highwayhash.New(t.hashKey); err != nil {
+	if hash, err = highwayhash.New64(t.hashKey); err != nil {
 		return nil, err
 	}
 
@@ -243,7 +243,7 @@ func (t *AuthToken) DecryptPayload(body io.Reader) (io.ReadCloser, error) {
 		waitForPayloadRead sync.WaitGroup
 	)
 
-	if hash, err = highwayhash.New(t.hashKey); err != nil {
+	if hash, err = highwayhash.New64(t.hashKey); err != nil {
 		return nil, err
 	}
 
