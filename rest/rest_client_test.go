@@ -77,7 +77,7 @@ var _ = Describe("Rest Client", func() {
 				Body: &requestBody,
 			},
 		).DoPost(response)
-		Expect(err).ToNot((HaveOccurred()))
+		Expect(err).ToNot(HaveOccurred())
 
 		Expect(response.StatusCode).To(Equal(200))
 		Expect(*responseBody.Resparg1).To(Equal("respvalue1"))
@@ -111,7 +111,7 @@ var _ = Describe("Rest Client", func() {
 				},
 			},
 		).DoGet(response)
-		Expect(err).To((HaveOccurred()))
+		Expect(err).To(HaveOccurred())
 
 		Expect(response.StatusCode).To(Equal(400))
 		Expect(responseBody.Resparg1).To(BeNil())
