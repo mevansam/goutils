@@ -5,12 +5,17 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
 	"reflect"
+	"strings"
 	"sync"
 
 	"github.com/mevansam/goutils/logger"
+	"github.com/mevansam/goutils/rest"
+
+	. "github.com/onsi/gomega"
 )
 
 type MockHttpServer struct {
@@ -330,4 +335,63 @@ func (r *request) RespondWithError(httpError string, code int) *request {
 	r.httpError = &httpError
 	r.httpCode = code
 	return r
+}
+
+func HandleAuthHeaders(mockAuthCrypt rest.AuthCrypt, request, response string) (func(w http.ResponseWriter, r *http.Request, body string) *string) {
+	
+	var expectedRequest interface{}
+	if len(request) > 0 {
+		if err := json.Unmarshal([]byte(request), &expectedRequest); err != nil {
+			log.Fatalf("Error parsing JSON expected request body '%s': %s", request, err.Error())
+		}
+	}
+
+	return func(w http.ResponseWriter, r *http.Request, body string) *string {
+		encryptedAuthToken := r.Header["X-Auth-Token"]
+		Expect(encryptedAuthToken).NotTo(BeNil())
+		Expect(len(encryptedAuthToken)).To(BeNumerically(">", 0))
+		
+		authRespToken, err := rest.NewValidatedResponseToken(encryptedAuthToken[0], mockAuthCrypt)
+		Expect(err).NotTo(HaveOccurred())
+
+		// retrieve decrypted request payload
+		if len(body) > 0 {
+			Expect(expectedRequest).NotTo(BeNil())
+
+			payloadReader, err := authRespToken.DecryptPayload(strings.NewReader(body))
+			Expect(err).ToNot(HaveOccurred())
+			payload, err := io.ReadAll(payloadReader.(io.Reader))
+			Expect(err).ToNot(HaveOccurred())	
+
+			var actualRequest interface{}
+			if err := json.Unmarshal([]byte(payload), &actualRequest); err != nil {
+				log.Fatalf("Error parsing JSON actual request body '%s': %s", payload, err.Error())
+			}	
+
+			Expect(reflect.DeepEqual(expectedRequest, actualRequest)).To(BeTrue())
+		} else {
+			Expect(expectedRequest).To(BeNil())
+		}
+
+		// get encrypted response body
+		responseBody := []byte{}
+		if len(response) > 0 {
+			bodyReader, err := authRespToken.EncryptPayload(strings.NewReader(response))
+			Expect(err).ToNot(HaveOccurred())
+			responseBody, err = io.ReadAll(bodyReader)
+			Expect(err).ToNot(HaveOccurred())	
+		}
+
+		encryptedRespAuthToken, err := authRespToken.GetEncryptedToken()
+		Expect(err).NotTo(HaveOccurred())
+	
+		w.Header()["X-Auth-Token-Response"] = []string{ encryptedRespAuthToken }
+
+		if (len(responseBody) > 0) {
+			respBody := string(responseBody)
+			return &respBody	
+		} else {
+			return nil
+		}
+	}
 }
