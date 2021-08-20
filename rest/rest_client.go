@@ -56,6 +56,11 @@ func NewRestApiClient(ctx context.Context, url string) *RestApiClient {
 	}
 }
 
+func (c *RestApiClient) WithHttpClient(httpClient *http.Client) *RestApiClient {
+	c.httpClient = httpClient
+	return c
+}
+
 func (c *RestApiClient) WithAuthCrypt(authCrypt AuthCrypt) *RestApiClient {
 	c.authCrypt = authCrypt
 	return c
