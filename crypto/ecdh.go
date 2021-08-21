@@ -43,7 +43,7 @@ func (key *ECDHKey) PublicKey() (string, error) {
 
 // retrieves a shared secret with another 
 // ECDH key using that key's public key
-func (key *ECDHKey) SharedSecret(otherPublicKey string) (string, error) {
+func (key *ECDHKey) SharedSecret(otherPublicKey string) ([]byte, error) {
 
 	var (
 		err error
@@ -55,17 +55,17 @@ func (key *ECDHKey) SharedSecret(otherPublicKey string) (string, error) {
 	)
 
 	if der, err = base64.StdEncoding.DecodeString(otherPublicKey); err != nil {
-		return "", nil
+		return nil, nil
 	}
   if pk, err = x509.ParsePKIXPublicKey(der); err != nil {
-		return "", err
+		return nil, err
 	}
 	if publicKey, ok = pk.(*ecdsa.PublicKey); !ok {
-		return "", fmt.Errorf("other public key was not an ECDSA public key")
+		return nil, fmt.Errorf("other public key was not an ECDSA public key")
 	}
 	
 	x, _ := publicKey.Curve.ScalarMult(publicKey.X, publicKey.Y, key.privateKey.D.Bytes())
-	return base64.StdEncoding.EncodeToString(x.Bytes()), nil
+	return x.Bytes(), nil
 }
 
 // retrieves base64 encoded public key that 
