@@ -3,6 +3,7 @@ package mocks
 import (
 	"bytes"
 	"context"
+	"crypto/tls"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -59,15 +60,49 @@ func NewMockHttpServer(port int) *MockHttpServer {
 	return &ms
 }
 
+func NewMockHttpsServer(port int) (*MockHttpServer, string, error) {
+
+	var (
+		err error
+
+		serverCert *tls.Certificate
+		caRootPEM  []byte
+	)
+
+	ms := MockHttpServer{}
+	serveMux := http.NewServeMux()
+	serveMux.HandleFunc("/", ms.mockResponseReflector)
+
+	if serverCert, caRootPEM, err = certsetup(); err != nil {
+		return nil, "", err
+	}
+	serverTLSConf := &tls.Config{
+		Certificates: []tls.Certificate{*serverCert},
+	}
+	ms.server = &http.Server{ 
+		Addr: fmt.Sprintf(":%d", port),
+		Handler: serveMux,
+		TLSConfig: serverTLSConf,
+	}
+	return &ms, string(caRootPEM), nil
+}
+
 func (ms *MockHttpServer) Start() {
 	go func() {
 		defer ms.serverExit.Done() // let caller know we are done cleaning up
 		ms.serverExit.Add(1)
 
 		// always returns error. ErrServerClosed on graceful close
-		if err := ms.server.ListenAndServe(); err != http.ErrServerClosed {
+		if ms.server.TLSConfig != nil {
+			if err := ms.server.ListenAndServeTLS("", ""); err != http.ErrServerClosed {
 				// unexpected error. port in use?
 				log.Fatalf("MockServer.Start(): %v", err)
+			}
+		} else {
+			if err := ms.server.ListenAndServe(); err != http.ErrServerClosed {
+				// unexpected error. port in use?
+				log.Fatalf("MockServer.Start(): %v", err)
+			}
 		}
 	}()	
 }
