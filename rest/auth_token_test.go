@@ -4,8 +4,12 @@ import (
 	"bytes"
 	"encoding/json"
 	"io"
+	"net/http"
+	"reflect"
+	"regexp"
 	"strings"
 
+	"github.com/gin-gonic/gin"
 	"github.com/mevansam/goutils/rest"
 
 	test_mocks "github.com/mevansam/goutils/test/mocks"
@@ -83,7 +87,79 @@ var _ = Describe("Auth Token", func() {
 		Expect(err).ToNot(HaveOccurred())
 		Expect(string(payload)).To(Equal(testResponsePayload))
 	})
+
+	It("Creates and auth token and saves it to the gin context", func() {
+
+		var (
+			err error
+	
+			mockAuthCrypt rest.AuthCrypt
+		)
+
+		mockAuthCrypt, err = test_mocks.NewMockAuthCrypt("some key", nil)
+		Expect(err).ToNot(HaveOccurred())
+		authToken, err := rest.NewAuthToken(mockAuthCrypt)
+		Expect(err).ToNot(HaveOccurred())
+		Expect(authToken).ToNot(BeNil())
+
+		context := &gin.Context{}
+		authToken.SetInContext(context)
+
+		payload := struct {
+			Val1 string
+			Val2 string
+		}{
+			Val1: "abcd",
+			Val2: "efgh",
+		}
+		render := rest.NewEncryptedRender(context, payload)
+
+		writerMock := &httpResponseWriterMock{
+			header: make(map[string][]string),
+		}
+		render.WriteContentType(writerMock)
+		err = render.Render(writerMock)
+		Expect(err).ToNot(HaveOccurred())
+
+		Expect(writerMock.header["Content-Type"][0]).To(Equal("application/json; charset=utf-8"))
+		Expect(len(writerMock.header["X-Auth-Token-Response"][0])).To(BeNumerically(">", 0))
+
+		context.Request = &http.Request{
+			Body: io.NopCloser(bytes.NewReader(writerMock.body)),
+		}
+		
+		actualPayload := struct {
+			Val1 string
+			Val2 string
+		}{}
+		err = rest.DecryptPayloadFromContext(context, &actualPayload)
+		Expect(err).ToNot(HaveOccurred())
+		Expect(reflect.DeepEqual(payload, actualPayload)).To(BeTrue())
+	})
 })
+
+type httpResponseWriterMock struct {
+	header map[string][]string
+	body   []byte
+}
+
+func (w *httpResponseWriterMock) Header() http.Header {
+	return w.header
+}
+
+func (w *httpResponseWriterMock) Write(data []byte) (int, error) {
+	w.body = data
+	Expect(len(data)).To(BeNumerically(">", 0))
+
+	match, err := regexp.MatchString("{\"payload\":\"[=+\\/0-9a-zA-Z]+\"}", string(data))
+	Expect(err).ToNot(HaveOccurred())
+	Expect(match).To(BeTrue())
+	
+	return len(data), nil
+}
+
+func (w *httpResponseWriterMock) WriteHeader(statusCode int) {
+}
 
 const testRequestPayload = `Hey, diddle, diddle, the cat and the fiddle
 The cow jumped over the moon

@@ -14,6 +14,7 @@ import (
 
 	crypto_rand "crypto/rand"
 
+	"github.com/gin-gonic/gin"
 	"github.com/mevansam/goutils/logger"
 	"github.com/minio/highwayhash"
 )
@@ -324,11 +325,51 @@ func (t *AuthToken) DecryptAndDecodePayload(body io.Reader, obj interface{}) err
 	return nil
 }
 
-// Gin renderer for encrypted payloads
+// sets token in gin context
+func (t *AuthToken) SetInContext(c *gin.Context) {
+	if c.Keys == nil {
+		c.Keys = make(map[string]interface{})
+	}
+	c.Keys["authToken"] = t
+}
 
+// retrieves token from gin context
+func DecryptPayloadFromContext(c *gin.Context, requestBody interface{}) error {
+
+	var (
+		err error
+		ok  bool
+
+		t         interface{}
+		authToken *AuthToken
+	)
+
+	if c.Keys == nil {
+		return fmt.Errorf("gin context Keys attribute is nil")
+	}
+	if t, ok = c.Keys["authToken"]; !ok {
+		return fmt.Errorf("auth token not found in gin context")
+	}
+	if authToken, ok = t.(*AuthToken); !ok {
+		return fmt.Errorf("auth token from gin context is of incorrect type: %T", t)
+	}
+	if err = authToken.DecryptAndDecodePayload(c.Request.Body, &requestBody); err != nil {
+		return err
+	}
+	return nil
+}
+
+// Gin renderer for encrypted payloads
 type RenderEncryptedPayload struct {
-	AuthRespToken *AuthToken
-	Payload       interface{}
+	context *gin.Context
+	payload interface{}
+}
+
+func NewEncryptedRender(c *gin.Context, p interface{}) RenderEncryptedPayload {
+	return RenderEncryptedPayload{
+		context: c,
+		payload: p,
+	}
 }
 
 func (r RenderEncryptedPayload) WriteContentType(w http.ResponseWriter) {
@@ -339,6 +380,10 @@ func (r RenderEncryptedPayload) Render(w http.ResponseWriter) (error) {
 
 	var (
 		err error
+		ok  bool
+
+		token     interface{}
+		authToken *AuthToken
 
 		response               io.Reader
 		encryptedRespAuthToken string
@@ -347,16 +392,23 @@ func (r RenderEncryptedPayload) Render(w http.ResponseWriter) (error) {
 	payloadReader, payloadWriter := io.Pipe()
 	go func() {
 		defer payloadWriter.Close()
-		if err = json.NewEncoder(payloadWriter).Encode(r.Payload); err != nil {
+		if err = json.NewEncoder(payloadWriter).Encode(r.payload); err != nil {
 			logger.TraceMessage(
 				"RenderEncryptedPayload.Render: ERROR! Failed to encode JSON response payload: %s", 
 				err.Error())
 		}
 	}()
-	if response, err = r.AuthRespToken.EncryptPayload(payloadReader); err != nil {
+
+	if token, ok = r.context.Keys["authToken"]; !ok {
+		return fmt.Errorf("auth token not found in context")
+	}
+	if authToken, ok = token.(*AuthToken); !ok {
+		return fmt.Errorf("auth token from context is of incorrect type: %T", token)
+	}
+	if response, err = authToken.EncryptPayload(payloadReader); err != nil {
 		return err
 	}
-	if encryptedRespAuthToken, err = r.AuthRespToken.GetEncryptedToken(); err != nil {
+	if encryptedRespAuthToken, err = authToken.GetEncryptedToken(); err != nil {
 		return err
 	}
 	w.Header().Add("X-Auth-Token-Response", encryptedRespAuthToken)
