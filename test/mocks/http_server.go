@@ -393,16 +393,9 @@ func HandleAuthHeaders(mockAuthCrypt rest.AuthCrypt, request, response string) (
 		if len(body) > 0 {
 			Expect(expectedRequest).NotTo(BeNil())
 
-			payloadReader, err := authRespToken.DecryptPayload(strings.NewReader(body))
-			Expect(err).ToNot(HaveOccurred())
-			payload, err := io.ReadAll(payloadReader.(io.Reader))
-			Expect(err).ToNot(HaveOccurred())	
-
 			var actualRequest interface{}
-			if err := json.Unmarshal([]byte(payload), &actualRequest); err != nil {
-				log.Fatalf("Error parsing JSON actual request body '%s': %s", payload, err.Error())
-			}	
-
+			err := authRespToken.DecryptAndDecodePayload(strings.NewReader(body), &actualRequest)
+			Expect(err).ToNot(HaveOccurred())
 			Expect(reflect.DeepEqual(expectedRequest, actualRequest)).To(BeTrue())
 		} else {
 			Expect(expectedRequest).To(BeNil())

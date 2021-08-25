@@ -306,6 +306,24 @@ func (t *AuthToken) DecryptPayload(body io.Reader) (io.ReadCloser, error) {
 	return io.NopCloser(bytes.NewReader(payload)), nil
 }
 
+// decrypt and parse payload
+func (t *AuthToken) DecryptAndDecodePayload(body io.Reader, obj interface{}) error {
+
+	var (
+		err error
+
+		payload io.Reader 
+	)
+	
+	if payload, err = t.DecryptPayload(body); err != nil {
+		return err
+	}
+	if err = json.NewDecoder(payload).Decode(&obj); err != nil {
+		return err
+	}
+	return nil
+}
+
 // Gin renderer for encrypted payloads
 
 type RenderEncryptedPayload struct {
