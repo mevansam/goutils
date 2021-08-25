@@ -24,7 +24,7 @@ var _ = Describe("Auth Token", func() {
 			mockAuthCrypt rest.AuthCrypt
 		)
 
-		mockAuthCrypt, err = test_mocks.NewMockAuthCrypt("some key")
+		mockAuthCrypt, err = test_mocks.NewMockAuthCrypt("some key", nil)
 		Expect(err).ToNot(HaveOccurred())
 		authToken, err := rest.NewAuthToken(mockAuthCrypt)
 		Expect(err).ToNot(HaveOccurred())

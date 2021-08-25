@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"hash"
 	"io"
+	"net/http"
 	"strings"
 	"sync"
 
@@ -303,4 +304,48 @@ func (t *AuthToken) DecryptPayload(body io.Reader) (io.ReadCloser, error) {
 
 	waitForPayloadRead.Wait()
 	return io.NopCloser(bytes.NewReader(payload)), nil
+}
+
+// Gin renderer for encrypted payloads
+
+type RenderEncryptedPayload struct {
+	AuthRespToken *AuthToken
+	Payload       interface{}
+}
+
+func (r RenderEncryptedPayload) WriteContentType(w http.ResponseWriter) {
+	w.Header().Add("Content-Type", "application/json; charset=utf-8")
+}
+
+func (r RenderEncryptedPayload) Render(w http.ResponseWriter) (error) {
+
+	var (
+		err error
+
+		response               io.Reader
+		encryptedRespAuthToken string
+	)
+
+	payloadReader, payloadWriter := io.Pipe()
+	go func() {
+		defer payloadWriter.Close()
+		if err = json.NewEncoder(payloadWriter).Encode(r.Payload); err != nil {
+			logger.TraceMessage(
+				"RenderEncryptedPayload.Render: ERROR! Failed to encode JSON response payload: %s", 
+				err.Error())
+		}
+	}()
+	if response, err = r.AuthRespToken.EncryptPayload(payloadReader); err != nil {
+		return err
+	}
+	if encryptedRespAuthToken, err = r.AuthRespToken.GetEncryptedToken(); err != nil {
+		return err
+	}
+	w.Header().Add("X-Auth-Token-Response", encryptedRespAuthToken)
+
+	// write response body
+	if _, err = io.Copy(w, response); err != nil {
+		return err
+	}
+	return nil
 }

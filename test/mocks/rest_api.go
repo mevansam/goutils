@@ -15,7 +15,7 @@ type MockAuthCrypt struct {
 	k string
 }
 
-func NewMockAuthCrypt(key string) (*MockAuthCrypt, error) {
+func NewMockAuthCrypt(key string, encryptionKey []byte) (*MockAuthCrypt, error) {
 
 	var (
 		err error
@@ -24,9 +24,11 @@ func NewMockAuthCrypt(key string) (*MockAuthCrypt, error) {
 	restApiAuth := &MockAuthCrypt{
 		k: key,
 	}
-	encryptionKey := make([]byte, 32)
-	if _, err = io.ReadFull(rand.Reader, encryptionKey); err != nil {
-		return nil, err
+	if (encryptionKey == nil) {
+		encryptionKey = make([]byte, 32)
+		if _, err = io.ReadFull(rand.Reader, encryptionKey); err != nil {
+			return nil, err
+		}	
 	}
 	if restApiAuth.c, err = crypto.NewCrypt(encryptionKey); err != nil {
 		return nil, err
