@@ -121,7 +121,7 @@ var _ = Describe("Rest Client", func() {
 
 	It("sends an authenticated rest post request and receives a good response", func() {
 
-		mockAuthCrypt, err := test_mocks.NewMockAuthCrypt("some key")
+		mockAuthCrypt, err := test_mocks.NewMockAuthCrypt("some key", nil)
 		Expect(err).ToNot(HaveOccurred())
 
 		testServer.PushRequest().
@@ -157,7 +157,7 @@ var _ = Describe("Rest Client", func() {
 
 	It("sends an authenticated rest post request and receives a bad response auth header", func() {
 
-		mockAuthCrypt, err := test_mocks.NewMockAuthCrypt("some key")
+		mockAuthCrypt, err := test_mocks.NewMockAuthCrypt("some key", nil)
 		Expect(err).ToNot(HaveOccurred())
 	
 		testServer.PushRequest().
