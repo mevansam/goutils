@@ -183,7 +183,7 @@ func (t *AuthToken) EncryptPayload(payload io.Reader) (io.Reader, error) {
 		writer := io.MultiWriter(writerHash, writerPayload)
 		if _, err := io.Copy(writer, payload); err != nil {
 			logger.TraceMessage(
-				"AuthToken.EncryptPayload: ERROR! Failed to copy payload for hashing and encryption: %s", 
+				"AuthToken.EncryptPayload(): ERROR! Failed to copy payload for hashing and encryption: %s", 
 				err.Error())
 		}
 	}()
@@ -193,7 +193,7 @@ func (t *AuthToken) EncryptPayload(payload io.Reader) (io.Reader, error) {
 		// read payload content concurrently with hashing of payload content
 		if body, err = io.ReadAll(readerBody); err != nil {
 			logger.TraceMessage(
-				"AuthToken.EncryptPayload: ERROR! Failed to read body to encrypt: %s", 
+				"AuthToken.EncryptPayload(): ERROR! Failed to read body to encrypt: %s", 
 				err.Error())
 		}
 	}()
@@ -204,7 +204,12 @@ func (t *AuthToken) EncryptPayload(payload io.Reader) (io.Reader, error) {
 	}
 	t.payloadChecksum = hex.EncodeToString(hash.Sum(nil))
 
-	// encrypt payload content
+	logger.TraceMessage(
+		"AuthToken.EncryptPayload(): Encrypted payload cheksum: %s", 
+		string(t.payloadChecksum),
+	)
+
+// encrypt payload content
 	crypt, cryptLock := t.authCrypt.Crypt()
 	cryptLock.Lock()
 	defer cryptLock.Unlock()
@@ -222,7 +227,7 @@ func (t *AuthToken) EncryptPayload(payload io.Reader) (io.Reader, error) {
 		defer payloadWriter.Close()
 		if err := json.NewEncoder(payloadWriter).Encode(encryptedPayload); err != nil {
 			logger.TraceMessage(
-				"AuthToken.EncryptPayload: ERROR! Failed to encode JSON with encrypted payload: %s", 
+				"AuthToken.EncryptPayload(): ERROR! Failed to encode JSON with encrypted payload: %s", 
 				err.Error())
 		}
 	}()
@@ -302,6 +307,11 @@ func (t *AuthToken) DecryptPayload(body io.Reader) (io.ReadCloser, error) {
 	if hex.EncodeToString(hash.Sum(nil)) != t.payloadChecksum {
 		return nil, fmt.Errorf("received payload corrupted")
 	}
+
+	logger.TraceMessage(
+		"AuthToken.DecryptPayload(): Decrypted payload checksum validates: %s", 
+		string(t.payloadChecksum),
+	)
 
 	waitForPayloadRead.Wait()
 	return io.NopCloser(bytes.NewReader(payload)), nil
