@@ -12,6 +12,10 @@ func IsAdmin() (bool, error) {
 }
 
 func RunAsAdmin(outputBuffer, errorBuffer io.Writer) error {
+	return RunAsAdminWithArgs(os.Args, outputBuffer, errorBuffer)
+}
+
+func RunAsAdminWithArgs(cmdArgs []string, outputBuffer, errorBuffer io.Writer) error {
 
 	var (
 		err error
@@ -32,6 +36,6 @@ func RunAsAdmin(outputBuffer, errorBuffer io.Writer) error {
 		return err
 	}
 	args := []string{ "-s", "-E" }
-	args = append(args, os.Args...)
+	args = append(args, cmdArgs...)
 	return cli.Run(args)
 }

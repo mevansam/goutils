@@ -9,6 +9,10 @@ import (
 )
 
 func RunAsAdmin(outputBuffer, errorBuffer io.Writer) error {
+	return RunAsAdminWithArgs(os.Args, outputBuffer, errorBuffer)
+}
+
+func RunAsAdminWithArgs(cmdArgs []string, outputBuffer, errorBuffer io.Writer) error {
 	return nil
 }
 
