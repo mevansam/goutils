@@ -209,7 +209,7 @@ func (t *AuthToken) EncryptPayload(payload io.Reader) (io.Reader, error) {
 		string(t.payloadChecksum),
 	)
 
-// encrypt payload content
+	// encrypt payload content
 	crypt, cryptLock := t.authCrypt.Crypt()
 	cryptLock.Lock()
 	defer cryptLock.Unlock()
