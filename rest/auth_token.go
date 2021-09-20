@@ -173,7 +173,8 @@ func (t *requestAuthToken) SignTransportData(keys []string, data interface{}) er
 
 		switch key {
 			case "url": {
-				dataValue.WriteString(request.URL.String())
+				dataValue.WriteString(request.URL.Host)
+				dataValue.WriteString(request.URL.RequestURI())
 			}
 			case "body": {
 				if body, err = ioutil.ReadAll(request.Body); err != nil {
@@ -421,7 +422,8 @@ func (t *responseAuthToken) ValidateTransportData(data interface{}) error {
 	for _, key := range parts[:len(parts) - 1] {
 		switch key {
 			case "url": {
-				dataValue.WriteString(request.URL.String())
+				dataValue.WriteString(request.Host)
+				dataValue.WriteString(request.URL.RequestURI())
 			}
 			case "body": {
 				if body, err = ioutil.ReadAll(request.Body); err != nil {
@@ -512,7 +514,7 @@ func (t *authTokenCommon) EncryptPayload(payload io.Reader) (io.Reader, error) {
 	t.payloadChecksum = hex.EncodeToString(hash.Sum(nil))
 
 	logger.TraceMessage(
-		"AuthToken.EncryptPayload(): Encrypted payload cheksum: %s",
+		"AuthToken.EncryptPayload(): Encrypted payload checksum: %s",
 		string(t.payloadChecksum),
 	)
 

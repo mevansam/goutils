@@ -108,6 +108,7 @@ var _ = Describe("Auth Token", func() {
 		Expect(err).ToNot(HaveOccurred())
 		request := &http.Request{
 			URL: url,
+			Host: "acme.io",
 			Header: map[string][]string{
 				"Header1": { "value1"},
 				"Header2": { "value2"},

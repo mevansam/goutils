@@ -113,6 +113,10 @@ func (r *Request) do(method string, response *Response) (err error) {
 			return err
 		}
 	}
+	// keys to sign for authenticated requests. any additional 
+	// provided headers will also be signed. body is not signed 
+	// as it will be signed separately before encryption.
+	keysToSign := []string{"url"}
 	
 	// concatonate client url with request 
 	// path to create the complete url
@@ -164,6 +168,7 @@ func (r *Request) do(method string, response *Response) (err error) {
 	httpRequest.Header.Set("Accept", "application/json; charset=utf-8")
 	for n, v := range r.Headers {
 		httpRequest.Header.Set(n, v)
+		keysToSign = append(keysToSign, n)
 	}
 
 	// if client has an authenticated crypt then
@@ -171,7 +176,10 @@ func (r *Request) do(method string, response *Response) (err error) {
 	// the request to be validated on the server
 	// side
 	if authToken != nil {
-		var encryptedReqToken string		
+		var encryptedReqToken string
+		if err = authToken.SignTransportData(keysToSign, httpRequest); err != nil {
+			return err
+		}
 		if encryptedReqToken, err = authToken.GetEncryptedToken(); err != nil {
 			return err
 		}
