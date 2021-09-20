@@ -117,7 +117,7 @@ func (t *requestAuthToken) SetEncryptedToken(encryptedToken string) error {
 		return fmt.Errorf("invalid response token")
 	}
 	t.authTokenCommon.transportDataChecksum = tokenParts[1]
-	t.payloadChecksum = tokenParts[2]
+	t.authTokenCommon.payloadChecksum = tokenParts[2]
 	return nil
 }
 
@@ -138,7 +138,7 @@ func (t *requestAuthToken) GetEncryptedToken() (string, error) {
 		token.WriteByte('|')
 		token.WriteString(t.authTokenCommon.transportDataChecksum)
 		token.WriteByte('|')
-		token.WriteString(t.payloadChecksum)
+		token.WriteString(t.authTokenCommon.payloadChecksum)
 		return crypt.EncryptB64(token.String())
 	}
 	return "", fmt.Errorf("not authenticated")
@@ -309,7 +309,7 @@ func (t *responseAuthToken) SetEncryptedToken(encryptedToken string) error {
 		return fmt.Errorf("invalid request token. error parsing hash key: %s", err.Error())
 	}
 	t.authTokenCommon.transportDataChecksum = tokenParts[2]
-	t.payloadChecksum = tokenParts[3]
+	t.authTokenCommon.payloadChecksum = tokenParts[3]
 	return nil
 }
 
@@ -328,7 +328,7 @@ func (t *responseAuthToken) GetEncryptedToken() (string, error) {
 		token.WriteByte('|')
 		token.WriteString(t.authTokenCommon.transportDataChecksum)
 		token.WriteByte('|')
-		token.WriteString(t.payloadChecksum)
+		token.WriteString(t.authTokenCommon.payloadChecksum)
 		return crypt.EncryptB64(token.String())
 	}
 	return "", fmt.Errorf("not authenticated")
