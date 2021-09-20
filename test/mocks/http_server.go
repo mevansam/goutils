@@ -386,7 +386,8 @@ func HandleAuthHeaders(mockAuthCrypt rest.AuthCrypt, request, response string) (
 		Expect(encryptedAuthToken).NotTo(BeNil())
 		Expect(len(encryptedAuthToken)).To(BeNumerically(">", 0))
 		
-		authRespToken, err := rest.NewValidatedResponseToken(encryptedAuthToken[0], mockAuthCrypt)
+		authRespToken := rest.NewResponseAuthToken(mockAuthCrypt)
+		err := authRespToken.SetEncryptedToken(encryptedAuthToken[0])
 		Expect(err).NotTo(HaveOccurred())
 
 		// retrieve decrypted request payload

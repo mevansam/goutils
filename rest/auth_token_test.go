@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
+	"net/url"
 	"reflect"
 	"regexp"
 	"strings"
@@ -20,7 +21,7 @@ import (
 
 var _ = Describe("Auth Token", func() {
 
-	It("Creates and auth token and validates it", func() {
+	It("Creates and auth token and validates it with encrypted payloads", func() {
 
 		var (
 			err error
@@ -30,12 +31,12 @@ var _ = Describe("Auth Token", func() {
 
 		mockAuthCrypt, err = test_mocks.NewMockAuthCrypt("some key", nil)
 		Expect(err).ToNot(HaveOccurred())
-		authToken, err := rest.NewAuthToken(mockAuthCrypt)
+		authToken, err := rest.NewRequestAuthToken(mockAuthCrypt)
 		Expect(err).ToNot(HaveOccurred())
 		Expect(authToken).ToNot(BeNil())
 
 		// get encrypted payload
-		r, err := authToken.EncryptPayload(strings.NewReader(testRequestPayload))
+		r, err := authToken.EncryptPayload(io.NopCloser(strings.NewReader(testRequestPayload)))
 		Expect(err).ToNot(HaveOccurred())
 		body, err := io.ReadAll(r)
 		Expect(err).ToNot(HaveOccurred())
@@ -53,8 +54,10 @@ var _ = Describe("Auth Token", func() {
 		Expect(len(encryptedReqToken)).To(BeNumerically(">", 0))
 
 		// validate request token and payload checksum
-		respAuthToken, err := rest.NewValidatedResponseToken(encryptedReqToken, mockAuthCrypt)
+		respAuthToken := rest.NewResponseAuthToken(mockAuthCrypt)
+		err = respAuthToken.SetEncryptedToken(encryptedReqToken)
 		Expect(err).ToNot(HaveOccurred())
+
 		r, err = respAuthToken.DecryptPayload(bytes.NewReader(body))
 		Expect(err).ToNot(HaveOccurred())
 		payload, err := io.ReadAll(r)
@@ -77,15 +80,78 @@ var _ = Describe("Auth Token", func() {
 		Expect(len(encryptedRespToken)).To(BeNumerically(">", 0))
 
 		// validate response token and payload
-		isValid, err := authToken.IsTokenResponseValid(encryptedRespToken)
+		err = authToken.SetEncryptedToken(encryptedRespToken)
 		Expect(err).ToNot(HaveOccurred())
-		Expect(isValid).To(BeTrue())
 
 		r, err = authToken.DecryptPayload(bytes.NewReader(body))
 		Expect(err).ToNot(HaveOccurred())
 		payload, err = io.ReadAll(r)
 		Expect(err).ToNot(HaveOccurred())
 		Expect(string(payload)).To(Equal(testResponsePayload))
+	})
+
+	It("Creates and auth token and validates it with unencrypted payload", func() {
+
+		var (
+			err error
+	
+			mockAuthCrypt rest.AuthCrypt
+		)
+
+		mockAuthCrypt, err = test_mocks.NewMockAuthCrypt("some key", nil)
+		Expect(err).ToNot(HaveOccurred())
+		authToken, err := rest.NewRequestAuthToken(mockAuthCrypt)
+		Expect(err).ToNot(HaveOccurred())
+		Expect(authToken).ToNot(BeNil())
+
+		url, err := url.ParseRequestURI("https://acme.io/aaa?a=1&b=2")
+		Expect(err).ToNot(HaveOccurred())
+		request := &http.Request{
+			URL: url,
+			Header: map[string][]string{
+				"Header1": { "value1"},
+				"Header2": { "value2"},
+				"Header3": { "value3"},
+			},
+			Body: io.NopCloser(strings.NewReader(testRequestPayload)),
+		}
+		err = authToken.SignTransportData([]string{"Header1", "Header2", "url", "body"}, request)
+		Expect(err).ToNot(HaveOccurred())
+
+		encryptedReqToken, err := authToken.GetEncryptedToken()
+		Expect(err).ToNot(HaveOccurred())
+		Expect(len(encryptedReqToken)).To(BeNumerically(">", 0))
+
+		// validate request token
+		respAuthToken := rest.NewResponseAuthToken(mockAuthCrypt)
+		err = respAuthToken.SetEncryptedToken(encryptedReqToken)
+		Expect(err).ToNot(HaveOccurred())
+
+		request.Body = io.NopCloser(strings.NewReader(testRequestPayload))
+		err = respAuthToken.ValidateTransportData(request)
+		Expect(err).ToNot(HaveOccurred())
+
+		response := &http.Response{
+			Header: map[string][]string{
+				"Header4": { "value4"},
+				"Header5": { "value5"},
+			},
+			Body: io.NopCloser(strings.NewReader(testResponsePayload)),
+		}
+		err = respAuthToken.SignTransportData([]string{"Header4", "Header5", "body"}, response)
+		Expect(err).ToNot(HaveOccurred())
+
+		encryptedRespToken, err := respAuthToken.GetEncryptedToken()
+		Expect(err).ToNot(HaveOccurred())
+		Expect(len(encryptedRespToken)).To(BeNumerically(">", 0))
+
+		// validate response token and payload
+		err = authToken.SetEncryptedToken(encryptedRespToken)
+		Expect(err).ToNot(HaveOccurred())
+
+		response.Body = io.NopCloser(strings.NewReader(testResponsePayload))
+		err = authToken.ValidateTransportData(response)
+		Expect(err).ToNot(HaveOccurred())
 	})
 
 	It("Creates and auth token and saves it to the gin context", func() {
@@ -98,7 +164,7 @@ var _ = Describe("Auth Token", func() {
 
 		mockAuthCrypt, err = test_mocks.NewMockAuthCrypt("some key", nil)
 		Expect(err).ToNot(HaveOccurred())
-		authToken, err := rest.NewAuthToken(mockAuthCrypt)
+		authToken, err := rest.NewRequestAuthToken(mockAuthCrypt)
 		Expect(err).ToNot(HaveOccurred())
 		Expect(authToken).ToNot(BeNil())
 

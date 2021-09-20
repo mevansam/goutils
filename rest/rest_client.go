@@ -100,7 +100,7 @@ func (r *Request) do(method string, response *Response) (err error) {
 		reader io.Reader
 		writer io.WriteCloser
 
-		authToken *AuthToken
+		authToken AuthToken
 
 		httpRequest  *http.Request
 		httpResponse *http.Response
@@ -109,7 +109,7 @@ func (r *Request) do(method string, response *Response) (err error) {
 	logger.TraceMessage("RestApiClient.Request.do(%s): processing request: #% v", method, r)
 
 	if r.client.authCrypt != nil {
-		if authToken, err = NewAuthToken(r.client.authCrypt); err != nil {
+		if authToken, err = NewRequestAuthToken(r.client.authCrypt); err != nil {
 			return err
 		}
 	}
@@ -243,7 +243,7 @@ func (r *Request) do(method string, response *Response) (err error) {
 		if authToken != nil {
 			if encryptedRespToken, exists := response.Headers["X-Auth-Token-Response"]; exists {
 
-				if isTokenResponseValid, err := authToken.IsTokenResponseValid(encryptedRespToken); err != nil || !isTokenResponseValid {
+				if err := authToken.SetEncryptedToken(encryptedRespToken); err != nil {
 					if err != nil {
 						logger.DebugMessage(
 							"RestApiClient.Request.do(%s): ERROR! Failed to validate response auth token: %s",
