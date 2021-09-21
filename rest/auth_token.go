@@ -173,7 +173,6 @@ func (t *requestAuthToken) SignTransportData(keys []string, data interface{}) er
 
 		switch key {
 			case "url": {
-				dataValue.WriteString(request.URL.Host)
 				dataValue.WriteString(request.URL.RequestURI())
 			}
 			case "body": {
@@ -422,7 +421,6 @@ func (t *responseAuthToken) ValidateTransportData(data interface{}) error {
 	for _, key := range parts[:len(parts) - 1] {
 		switch key {
 			case "url": {
-				dataValue.WriteString(request.Host)
 				dataValue.WriteString(request.URL.RequestURI())
 			}
 			case "body": {
