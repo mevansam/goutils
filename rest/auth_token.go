@@ -249,7 +249,7 @@ func (t *requestAuthToken) ValidateTransportData(data interface{}) error {
 	}
 	dataToSign := dataValue.String()
 	logger.TraceMessage(
-		"requestAuthToken.ValidateTransportData(): Calculating checksum of: %s",
+		"requestAuthToken.ValidateTransportData(): Validating with checksum of: %s",
 		dataToSign,
 	)
 
@@ -439,7 +439,7 @@ func (t *responseAuthToken) ValidateTransportData(data interface{}) error {
 	}
 	dataToSign := dataValue.String()
 	logger.TraceMessage(
-		"responseAuthToken.ValidateTransportData(): Calculating checksum of: %s",
+		"responseAuthToken.ValidateTransportData(): Validating with checksum of: %s",
 		dataToSign,
 	)
 
