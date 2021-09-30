@@ -139,7 +139,10 @@ func (t *requestAuthToken) GetEncryptedToken() (string, error) {
 		token.WriteString(t.authTokenCommon.transportDataChecksum)
 		token.WriteByte('|')
 		token.WriteString(t.authTokenCommon.payloadChecksum)
-		return crypt.EncryptB64(token.String())
+
+		t := token.String()
+		logger.TraceMessage("requestAuthToken.GetEncryptedToken: Auth token data: %s", t)
+		return crypt.EncryptB64(t)
 	}
 	return "", fmt.Errorf("not authenticated")
 }
