@@ -18,6 +18,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/mevansam/goutils/logger"
 	"github.com/minio/highwayhash"
+	"github.com/sirupsen/logrus"
 )
 
 type AuthToken interface {
@@ -532,6 +533,10 @@ func (t *authTokenCommon) EncryptPayload(payload io.Reader) (io.Reader, error) {
 	encryptedPayload := &encryptedPayload{
 		Payload: base64.StdEncoding.EncodeToString(encryptedBody),
 	}
+	logger.TraceMessage(
+		"AuthToken.EncryptPayload(): Encrypted payload: %# v",
+		encryptedPayload)
+
 	payloadReader, payloadWriter := io.Pipe()
 	go func() {
 		defer payloadWriter.Close()
@@ -560,6 +565,17 @@ func (t *authTokenCommon) DecryptPayload(body io.Reader) (io.ReadCloser, error) 
 
 		hash hash.Hash
 	)
+
+	if logrus.IsLevelEnabled(logrus.TraceLevel) {
+		if payload, err = io.ReadAll(body); err != nil {
+			return nil, err
+		}
+		logger.TraceMessage(
+			"AuthToken.DecryptPayload(): Encrypted payload: %# v",
+			string(payload))
+
+		body = io.NopCloser(bytes.NewReader(payload))
+	}
 
 	// unmarshal JSON containing encrypted payload
 	if err = json.NewDecoder(body).Decode(&encryptedPayload); err != nil {
