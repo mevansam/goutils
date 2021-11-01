@@ -17,6 +17,10 @@ func RunAsAdminWithArgs(cmdArgs []string, outputBuffer, errorBuffer io.Writer) e
 	return nil
 }
 
+func TerminateProcess(psRE string) error {
+	return nil
+}
+
 func IsAdmin() (bool, error) {
 	
 	var (
