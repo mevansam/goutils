@@ -16,6 +16,7 @@ import (
 	"github.com/mevansam/goutils/logger"
 	"github.com/mevansam/goutils/rest"
 
+	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
 )
 
@@ -382,6 +383,8 @@ func HandleAuthHeaders(mockAuthCrypt rest.AuthCrypt, request, response string) (
 	}
 
 	return func(w http.ResponseWriter, r *http.Request, body string) *string {
+		defer GinkgoRecover()
+
 		encryptedAuthToken := r.Header["X-Auth-Token"]
 		Expect(encryptedAuthToken).NotTo(BeNil())
 		Expect(len(encryptedAuthToken)).To(BeNumerically(">", 0))
@@ -399,6 +402,7 @@ func HandleAuthHeaders(mockAuthCrypt rest.AuthCrypt, request, response string) (
 			var actualRequest interface{}
 			err := authRespToken.DecryptAndDecodePayload(strings.NewReader(body), &actualRequest)
 			Expect(err).ToNot(HaveOccurred())
+			logger.TraceMessage("MockServer: decrypted and decoded request Body: %# v", actualRequest)
 			Expect(reflect.DeepEqual(expectedRequest, actualRequest)).To(BeTrue())
 		} else {
 			Expect(expectedRequest).To(BeNil())
