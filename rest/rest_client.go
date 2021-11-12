@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
+	"net"
 	"net/http"
 	"strings"
 	"time"
@@ -47,12 +48,29 @@ type NV map[string]string
 
 func NewRestApiClient(ctx context.Context, url string) *RestApiClient {
 
-	return &RestApiClient{
-		ctx: ctx,
-		url: url,
-		httpClient: &http.Client{
-			Timeout: time.Second * 10,
-		},
+	if strings.HasPrefix(url, "http://unix/") {
+		socketPath := url[11:]
+		return &RestApiClient{
+			ctx: ctx,
+			url: "http://unix",
+			httpClient: &http.Client{
+				Timeout: time.Second * 10,
+				Transport: &http.Transport{
+					DialContext: func(_ context.Context, _, _ string) (net.Conn, error) {
+						return net.Dial("unix", socketPath)
+					},
+				},
+			},
+		}	
+
+	} else {
+		return &RestApiClient{
+			ctx: ctx,
+			url: url,
+			httpClient: &http.Client{
+				Timeout: time.Second * 10,
+			},
+		}	
 	}
 }
 
