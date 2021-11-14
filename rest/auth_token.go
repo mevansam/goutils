@@ -490,8 +490,8 @@ func (t *authTokenCommon) EncryptPayload(payload io.Reader) (io.Reader, error) {
 
 		writer := io.MultiWriter(writerHash, writerPayload)
 		if _, err := io.Copy(writer, payload); err != nil {
-			logger.TraceMessage(
-				"AuthToken.EncryptPayload(): ERROR! Failed to copy payload for hashing and encryption: %s",
+			logger.ErrorMessage(
+				"AuthToken.EncryptPayload(): Failed to copy payload for hashing and encryption: %s",
 				err.Error())
 		}
 	}()
@@ -500,8 +500,8 @@ func (t *authTokenCommon) EncryptPayload(payload io.Reader) (io.Reader, error) {
 
 		// read payload content concurrently with hashing of payload content
 		if body, err = io.ReadAll(readerBody); err != nil {
-			logger.TraceMessage(
-				"AuthToken.EncryptPayload(): ERROR! Failed to read body to encrypt: %s",
+			logger.ErrorMessage(
+				"AuthToken.EncryptPayload(): Failed to read body to encrypt: %s",
 				err.Error())
 		}
 	}()
@@ -541,8 +541,8 @@ func (t *authTokenCommon) EncryptPayload(payload io.Reader) (io.Reader, error) {
 	go func() {
 		defer payloadWriter.Close()
 		if err := json.NewEncoder(payloadWriter).Encode(encryptedPayload); err != nil {
-			logger.TraceMessage(
-				"AuthToken.EncryptPayload(): ERROR! Failed to encode JSON with encrypted payload: %s",
+			logger.ErrorMessage(
+				"AuthToken.EncryptPayload(): Failed to encode JSON with encrypted payload: %s",
 				err.Error())
 		}
 	}()
@@ -607,8 +607,8 @@ func (t *authTokenCommon) DecryptPayload(body io.Reader) (io.ReadCloser, error) 
 
 		writer := io.MultiWriter(writerHash, writerBody)
 		if _, err := io.Copy(writer, bytes.NewReader(decryptedBody)); err != nil {
-			logger.TraceMessage(
-				"AuthToken.DecryptPayload: ERROR! Failed to copy payload for hashing and decryption: %s",
+			logger.ErrorMessage(
+				"AuthToken.DecryptPayload: Failed to copy payload for hashing and decryption: %s",
 				err.Error())
 		}
 	}()
@@ -617,8 +617,8 @@ func (t *authTokenCommon) DecryptPayload(body io.Reader) (io.ReadCloser, error) 
 
 		// read payload content concurrently with hashing of payload content
 		if payload, err = io.ReadAll(readerPayload); err != nil {
-			logger.TraceMessage(
-				"AuthToken.DecryptPayload: ERROR! Failed to read decrypted payload: %s",
+			logger.ErrorMessage(
+				"AuthToken.DecryptPayload: Failed to read decrypted payload: %s",
 				err.Error())
 		}
 	}()
@@ -721,8 +721,8 @@ func (r RenderEncryptedPayload) Render(w http.ResponseWriter) (error) {
 	go func() {
 		defer payloadWriter.Close()
 		if err = json.NewEncoder(payloadWriter).Encode(r.payload); err != nil {
-			logger.TraceMessage(
-				"RenderEncryptedPayload.Render: ERROR! Failed to encode JSON response payload: %s",
+			logger.ErrorMessage(
+				"RenderEncryptedPayload.Render: Failed to encode JSON response payload: %s",
 				err.Error())
 		}
 	}()

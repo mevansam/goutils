@@ -256,7 +256,7 @@ func (r *Request) do(method string, response *Response) (err error) {
 	if httpResponse.StatusCode < http.StatusOK || httpResponse.StatusCode >= http.StatusBadRequest {		
 		if err = decodeBody(httpResponse.Body, response.Error, true); err != nil {
 			response.RawErrorMessage = string(body)
-			logger.DebugMessage("RestApiClient.Request.do(%s): WARNING! Message body parse failed. Response body: %s", method, body)
+			logger.WarnMessage("RestApiClient.Request.do(%s): Message body parse failed. Response body: %s", method, body)
 		}
 		err = fmt.Errorf("api error: %d - %s", httpResponse.StatusCode, httpResponse.Status)
 	}
@@ -271,8 +271,8 @@ func (r *Request) do(method string, response *Response) (err error) {
 
 				if err := authToken.SetEncryptedToken(encryptedRespToken); err != nil {
 					if err != nil {
-						logger.DebugMessage(
-							"RestApiClient.Request.do(%s): ERROR! Failed to validate response auth token: %s",
+						logger.ErrorMessage(
+							"RestApiClient.Request.do(%s): EFailed to validate response auth token: %s",
 							method, err.Error(),
 						)
 					}
