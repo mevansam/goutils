@@ -15,10 +15,16 @@ import (
 func Initialize() {
 
 	switch logLevel := os.Getenv("CBS_LOGLEVEL"); logLevel {
-	case "debug":
-		SetConsoleLogger(log.DebugLevel)
 	case "trace":
 		SetConsoleLogger(log.TraceLevel)
+	case "debug":
+		SetConsoleLogger(log.DebugLevel)
+	case "info":
+		SetConsoleLogger(log.InfoLevel)
+	case "warn":
+		SetConsoleLogger(log.WarnLevel)
+	case "fatal":
+		SetConsoleLogger(log.FatalLevel)
 	default:
 		SetConsoleLogger(log.ErrorLevel)
 	}
