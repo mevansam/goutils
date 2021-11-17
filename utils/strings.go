@@ -1,9 +1,12 @@
 package utils
 
 import (
+	"bufio"
+	"bytes"
 	"fmt"
 	"io"
 	"math/rand"
+	"regexp"
 	"strings"
 )
 
@@ -225,6 +228,27 @@ func RandomString(n int) string {
 		b[i] = letterBytes[rand.Int63() % int64(len(letterBytes))]
 	}
 	return string(b)
+}
+
+func ExtractMatches(buffer []byte, patterns map[string]*regexp.Regexp) map[string][]string {
+
+	var (
+		matches [][]string
+
+		line string
+	)
+
+	results := make(map[string][]string)
+	scanner := bufio.NewScanner(bytes.NewReader(buffer))
+	for scanner.Scan() {
+		line = scanner.Text()
+		for name, pattern := range patterns {
+			if matches = pattern.FindAllStringSubmatch(line, -1); len(matches) > 0 && len(matches[0]) > 0 {
+				results[name] = matches[0]
+			}
+		}
+	}
+	return results
 }
 
 /*

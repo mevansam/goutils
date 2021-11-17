@@ -163,13 +163,9 @@ func (c *cli) RunWithEnv(
 	command.Stdout = c.outputBuffer
 	command.Stderr = c.errorBuffer
 
-	logger.TraceMessage(
-		"Running CLI command:\n  cli path: %s\n  args: %# v\n  env: %# v\n  dir: %s\n",
-		c.executablePath,
-		args,
-		command.Env,
-		c.workingDirectory,
-	)
+	logger.TraceMessage("CLI command environment: %# v", command.Env)
+	logger.TraceMessage("CLI command working dir: %s", c.workingDirectory)
+	logger.TraceMessage("Running CLI command: %s %s", c.executablePath, strings.Join(args, " "))
 
 	err := command.Run()
 

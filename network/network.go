@@ -1,50 +1,30 @@
 package network
 
-import (
-	"net"
-	"regexp"
-	"strconv"
-)
+type NetworkContext interface {	
+	DefaultDeviceName() string
+	DefaultInterface() string
+	DefaultGateway() string
 
-// given a device name prefix return the next available one
-func GetNextAvailabeInterface(prefix string) (string, error) {
+	NewDNSManager() (DNSManager, error)
+	NewRouteManager() (RouteManager, error)
 
-	var (
-		err error
-
-		devNamePattern *regexp.Regexp
-		matches        [][]string
-
-		ifaces   []net.Interface
-		devIndex, maxIndex int
-	)
-
-	if devNamePattern, err = regexp.Compile("^" + prefix + "([0-9]+)$"); err != nil {
-		return "", err
-	}
-	if ifaces, err = net.Interfaces(); err != nil {
-		return "", err
-	}
-	maxIndex = 0
-	for _, i := range ifaces {
-
-		if matches = devNamePattern.FindAllStringSubmatch(i.Name, -1); matches != nil {
-			if devIndex, err = strconv.Atoi(matches[0][1]); err != nil {
-				continue
-			}
-			if maxIndex < devIndex {
-				maxIndex = devIndex
-			}
-		}
-	}
-	return prefix + strconv.FormatInt(int64(maxIndex+1), 10), nil
+	Clear()
 }
 
-func IncIP(ip net.IP) {
-	for j := len(ip) - 1; j >= 0; j-- {
-		ip[j]++
-		if ip[j] > 0 {
-			break
-		}
-	}
+type DNSManager interface {
+	AddDNSServers(servers []string) error
+	AddSearchDomains(domains []string) error
+
+	Clear()
+}
+
+type RouteManager interface {
+	NewRoutableInterface(ifaceName, tunAddress string) (RoutableInterface, error)
+	AddExternalRouteToIPs(ips []string) error
+	
+	Clear()
+}
+
+type RoutableInterface interface {
+	MakeDefaultRoute() error
 }
