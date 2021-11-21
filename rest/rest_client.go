@@ -272,7 +272,7 @@ func (r *Request) do(method string, response *Response) (err error) {
 				if err := authToken.SetEncryptedToken(encryptedRespToken); err != nil {
 					if err != nil {
 						logger.ErrorMessage(
-							"RestApiClient.Request.do(%s): EFailed to validate response auth token: %s",
+							"RestApiClient.Request.do(%s): Failed to validate response auth token: %s",
 							method, err.Error(),
 						)
 					}
