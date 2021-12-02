@@ -20,6 +20,7 @@ import (
 
 type networkContext struct { 
 	ifconfig,
+	netstat,
 	route,
 	networksetup run.CLI
 
@@ -37,16 +38,14 @@ type networkContext struct {
 	routedIPs []string
 }
 
-var defaultDestinationPattern = regexp.MustCompile(`^\s*destination:\s+(.*)$`)
-var defaultGatewayPattern = regexp.MustCompile(`^\s*gateway:\s+(.*)$`)
-var defaultInterfacePattern = regexp.MustCompile(`^\s*interface:\s+(.*)$`)
+var defaultGatewayPattern = regexp.MustCompile(`^default\s+([0-9]+\.[0-9]+\.[0-9]+\.[0-9]+)\s+\S+\s+(\S+[0-9]+)\s*$`)
 
 func NewNetworkContext() (NetworkContext, error) {
 
 	var (
 		err    error
 		ok     bool
-		result []string
+		result [][]string
 
 		line string
 
@@ -66,6 +65,9 @@ func NewNetworkContext() (NetworkContext, error) {
 	if c.ifconfig, err = run.NewCLI("/sbin/ifconfig", home, null, null); err != nil {
 		return nil, err
 	}
+	if c.netstat, err = run.NewCLI("/usr/sbin/netstat", home, &c.outputBuffer, &c.outputBuffer); err != nil {
+		return nil, err
+	}
 	if c.route, err = run.NewCLI("/sbin/route", home, &c.outputBuffer, &c.outputBuffer); err != nil {
 		return nil, err
 	}
@@ -73,39 +75,31 @@ func NewNetworkContext() (NetworkContext, error) {
 		return nil, err
 	}
 
-	// retrieve current default route. this will return the 
-	// default gateway and interface that will be used to 
-	// retrieve a public internet resource
-	if err = c.route.Run([]string{ "get", "1.1.1.1" }); err != nil {
+	// retrieve current default route by querying the current route table
+	if err = c.netstat.Run([]string{ "-nrf", "inet" }); err != nil {
 		return nil, err
 	}
 
 	results := utils.ExtractMatches(c.outputBuffer.Bytes(), map[string]*regexp.Regexp{
-		"destination": defaultDestinationPattern,
 		"gateway": defaultGatewayPattern,
-		"interface": defaultInterfacePattern,
 	})
 	c.outputBuffer.Reset()
 
-	if result, ok = results["destination"]; !ok || result[1] != "default" {
-		return nil, fmt.Errorf("unable to determine the default network device")
-	}
 	if result, ok = results["gateway"]; !ok {
 		return nil, fmt.Errorf("unable to determine the default gateway")
 	}
-	if unicode.IsDigit(rune(result[1][0])) {
-		c.defaultGateway = result[1]
+
+	defaultGateway := result[0][1]	
+	if unicode.IsDigit(rune(defaultGateway[0])) {
+		c.defaultGateway = defaultGateway
 	} else {
-		if ip, err = net.LookupIP(result[1]); err != nil && len(ip) == 0 {
+		if ip, err = net.LookupIP(defaultGateway); err != nil && len(ip) == 0 {
 			return nil, err
 		}
 		c.defaultGateway = ip[0].String()
 	}
-	if result, ok = results["interface"]; !ok {
-		return nil, fmt.Errorf("unable to determine the default interface")
-	}
-	c.defaultInterface = result[1]
-	
+	c.defaultInterface = result[0][2]
+
 	// determine network service name for default device
 	if err = c.networksetup.Run([]string{ "-listallhardwareports" }); err != nil {
 		return nil, err

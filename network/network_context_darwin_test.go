@@ -25,5 +25,7 @@ var _ = Describe("Network Context", func() {
 
 		Expect(len(nc.DefaultInterface())).To(BeNumerically(">", 0))
 		Expect(nc.DefaultGateway()).To(MatchRegexp(`[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}`))
+		Expect(nc.DefaultInterface()).To(MatchRegexp(`en[0-9]+`))
+		Expect(len(nc.DefaultDeviceName())).To(BeNumerically(">", 0))
 	})
 })
