@@ -230,21 +230,26 @@ func RandomString(n int) string {
 	return string(b)
 }
 
-func ExtractMatches(buffer []byte, patterns map[string]*regexp.Regexp) map[string][]string {
+func ExtractMatches(buffer []byte, patterns map[string]*regexp.Regexp) map[string][][]string {
 
 	var (
 		matches [][]string
 
-		line string
+		line   string
+		exists bool
 	)
 
-	results := make(map[string][]string)
+	results := make(map[string][][]string)
 	scanner := bufio.NewScanner(bytes.NewReader(buffer))
 	for scanner.Scan() {
 		line = scanner.Text()
 		for name, pattern := range patterns {
 			if matches = pattern.FindAllStringSubmatch(line, -1); len(matches) > 0 && len(matches[0]) > 0 {
-				results[name] = matches[0]
+				if _, exists = results[name]; !exists {
+					results[name] = matches
+				} else {
+					results[name] = append(results[name], matches...)
+				}
 			}
 		}
 	}
