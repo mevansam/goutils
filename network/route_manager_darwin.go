@@ -7,6 +7,7 @@ import (
 	"net"
 
 	"github.com/mevansam/goutils/logger"
+	"github.com/mevansam/goutils/run"
 )
 
 // List of commands to run to configure
@@ -99,6 +100,10 @@ func (m *routeManager) AddExternalRouteToIPs(ips []string) error {
 	return nil
 }
 
+func (m *routeManager) AddDefaultRoute(gateway string) error {
+	return addDefaultRoute(m.nc.route, gateway)
+}
+
 func (m *routeManager) Clear() {
 	
 	var (
@@ -120,16 +125,20 @@ func (m *routeManager) Clear() {
 }
 
 func (i *routableInterface) MakeDefaultRoute() error {
+	return addDefaultRoute(i.nc.route, i.gatewayAddress)
+}
+
+func addDefaultRoute(route run.CLI, gateway string) error {
 
 	var (
 		err error
 	)
 
 	// create default route via interface's gateway
-	if err = i.nc.route.Run([]string{ "add", "-inet", "-net", "0.0.0.0", i.gatewayAddress, "128.0.0.0" }); err != nil {
+	if err = route.Run([]string{ "add", "-inet", "-net", "0.0.0.0", gateway, "128.0.0.0" }); err != nil {
 		return err
 	}
-	if err = i.nc.route.Run([]string{ "add", "-inet", "-net", "128.0.0.0", i.gatewayAddress, "128.0.0.0" }); err != nil {
+	if err = route.Run([]string{ "add", "-inet", "-net", "128.0.0.0", gateway, "128.0.0.0" }); err != nil {
 		return err
 	}
 	return nil
