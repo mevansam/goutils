@@ -34,18 +34,33 @@ import (
 
 type routeManager struct {	
 	nc *networkContext
+
+	ifconfig,
+	route run.CLI
 }
 
 type routableInterface struct {
-	nc *networkContext
-	
+	route run.CLI
+
 	gatewayAddress string
 }
 
 func (c *networkContext) NewRouteManager() (RouteManager, error) {
-	return &routeManager{
+
+	var (
+		err error
+	)
+
+	rm := &routeManager{
 		nc: c,
-	}, nil
+	}
+	if rm.ifconfig, err = run.NewCLI("/sbin/ifconfig", home, nullOut, nullOut); err != nil {
+		return nil, err
+	}
+	if rm.route, err = run.NewCLI("/sbin/route", home, &c.outputBuffer, &c.outputBuffer); err != nil {
+		return nil, err
+	}
+	return rm, nil
 }
 
 func (m *routeManager) NewRoutableInterface(ifaceName, address string) (RoutableInterface, error) {
@@ -72,15 +87,15 @@ func (m *routeManager) NewRoutableInterface(ifaceName, address string) (Routable
 	gatewayAddress := gatewayIP.String()
 
 	// add tunnel IP to local tunnel interface
-	if err = m.nc.ifconfig.Run([]string{ ifaceName, "inet", address, ip.String(), "up" }); err != nil {
+	if err = m.ifconfig.Run([]string{ ifaceName, "inet", address, ip.String(), "up" }); err != nil {
 		return nil, err
 	}	
 	// create route to tunnel gateway via tunnel interface
-	if err = m.nc.route.Run([]string{ "add", "-inet", "-net", gatewayAddress, "-interface", ifaceName }); err != nil {
+	if err = m.route.Run([]string{ "add", "-inet", "-net", gatewayAddress, "-interface", ifaceName }); err != nil {
 		return nil, err
 	}
 	return &routableInterface{
-		nc:                m.nc,
+		route:          m.route,
 		gatewayAddress: gatewayAddress,
 	}, nil
 }
@@ -92,7 +107,7 @@ func (m *routeManager) AddExternalRouteToIPs(ips []string) error {
 	)
 
 	for _, ip := range ips {
-		if err = m.nc.route.Run([]string{ "add", "-inet", "-net", ip, m.nc.defaultGateway, "255.255.255.255" }); err != nil {
+		if err = m.route.Run([]string{ "add", "-inet", "-net", ip, defaultGateway, "255.255.255.255" }); err != nil {
 			return err
 		}
 	}
@@ -101,7 +116,7 @@ func (m *routeManager) AddExternalRouteToIPs(ips []string) error {
 }
 
 func (m *routeManager) AddDefaultRoute(gateway string) error {
-	return addDefaultRoute(m.nc.route, gateway)
+	return addDefaultRoute(m.route, gateway)
 }
 
 func (m *routeManager) Clear() {
@@ -113,19 +128,19 @@ func (m *routeManager) Clear() {
 	// clear routed ips if any
 	if len(m.nc.routedIPs) > 0 {
 		for _, ip := range m.nc.routedIPs {
-			if err = m.nc.route.Run([]string{ "delete", "-inet", "-net", ip }); err != nil {
+			if err = m.route.Run([]string{ "delete", "-inet", "-net", ip }); err != nil {
 				logger.ErrorMessage("routeManager.Clear(): deleting route to %s: %s", ip, err.Error())
 			}
 		}
 	}
 
 	// clear default route if any
-	_ = m.nc.route.Run([]string{ "delete", "-inet", "-net", "0.0/1" })
-	_ = m.nc.route.Run([]string{ "delete", "-inet", "-net", "128.0/1" })	
+	_ = m.route.Run([]string{ "delete", "-inet", "-net", "0.0/1" })
+	_ = m.route.Run([]string{ "delete", "-inet", "-net", "128.0/1" })	
 }
 
 func (i *routableInterface) MakeDefaultRoute() error {
-	return addDefaultRoute(i.nc.route, i.gatewayAddress)
+	return addDefaultRoute(i.route, i.gatewayAddress)
 }
 
 func addDefaultRoute(route run.CLI, gateway string) error {

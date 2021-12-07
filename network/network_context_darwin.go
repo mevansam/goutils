@@ -8,7 +8,6 @@ import (
 	"bytes"
 	"fmt"
 	"net"
-	"os"
 	"regexp"
 	"unicode"
 
@@ -19,17 +18,6 @@ import (
 )
 
 type networkContext struct { 
-	ifconfig,
-	netstat,
-	route,
-	networksetup run.CLI
-
-	nullOut *os.File
-
-	netServiceName,
-	defaultInterface,
-	defaultGateway string
-	
 	outputBuffer bytes.Buffer
 
 	origDNSServers    []string
@@ -38,14 +26,25 @@ type networkContext struct {
 	routedIPs []string
 }
 
-var defaultGatewayPattern = regexp.MustCompile(`^default\s+([0-9]+\.[0-9]+\.[0-9]+\.[0-9]+)\s+\S+\s+(\S+[0-9]+)\s*$`)
+var (
+	defaultGatewayPattern = regexp.MustCompile(`^default\s+([0-9]+\.[0-9]+\.[0-9]+\.[0-9]+)\s+\S+\s+(\S+[0-9]+)\s*$`)
 
-func NewNetworkContext() (NetworkContext, error) {
+	netServiceName,
+	defaultInterface,
+	defaultGateway string	
+)
+
+func init() {
 
 	var (
-		err    error
-		ok     bool
-		result [][]string
+		err error
+		ok  bool
+
+		netstat,
+		networksetup run.CLI
+
+		outputBuffer bytes.Buffer
+		result       [][]string
 
 		line string
 
@@ -53,91 +52,86 @@ func NewNetworkContext() (NetworkContext, error) {
 	)
 
 	home, _ := homedir.Dir()
-	null, _ := os.Open(os.DevNull)
 
-	c := &networkContext{ 
-		nullOut: null,
-
-		origDNSServers:    []string{ "empty" },
-		origSearchDomains: []string{ "empty" },
+	if netstat, err = run.NewCLI("/usr/sbin/netstat", home, &outputBuffer, &outputBuffer); err != nil {
+		logger.ErrorMessage("network_context.init(): Error creating CLI for /usr/sbin/netstat: %s", err.Error())
+		panic(err)
 	}
-	
-	if c.ifconfig, err = run.NewCLI("/sbin/ifconfig", home, null, null); err != nil {
-		return nil, err
-	}
-	if c.netstat, err = run.NewCLI("/usr/sbin/netstat", home, &c.outputBuffer, &c.outputBuffer); err != nil {
-		return nil, err
-	}
-	if c.route, err = run.NewCLI("/sbin/route", home, &c.outputBuffer, &c.outputBuffer); err != nil {
-		return nil, err
-	}
-	if c.networksetup, err = run.NewCLI("/usr/sbin/networksetup", home, &c.outputBuffer, &c.outputBuffer); err != nil {
-		return nil, err
+	if networksetup, err = run.NewCLI("/usr/sbin/networksetup", home, &outputBuffer, &outputBuffer); err != nil {
+		logger.ErrorMessage("network_context.init(): Error creating CLI for /usr/sbin/networksetup: %s", err.Error())
+		panic(err)
 	}
 
 	// retrieve current default route by querying the current route table
-	if err = c.netstat.Run([]string{ "-nrf", "inet" }); err != nil {
-		return nil, err
+	if err = netstat.Run([]string{ "-nrf", "inet" }); err != nil {
+		logger.ErrorMessage("network_context.init(): Error running \"netstat -nrf inet\": %s", err.Error())
+		panic(err)
 	}
 
-	results := utils.ExtractMatches(c.outputBuffer.Bytes(), map[string]*regexp.Regexp{
+	results := utils.ExtractMatches(outputBuffer.Bytes(), map[string]*regexp.Regexp{
 		"gateway": defaultGatewayPattern,
 	})
-	c.outputBuffer.Reset()
+	outputBuffer.Reset()
 
 	if result, ok = results["gateway"]; !ok {
-		return nil, fmt.Errorf("unable to determine the default gateway")
+		panic(fmt.Errorf("unable to determine the default gateway"))
 	}
 
-	defaultGateway := result[0][1]	
-	if unicode.IsDigit(rune(defaultGateway[0])) {
-		c.defaultGateway = defaultGateway
-	} else {
+	defaultGateway = result[0][1]	
+	if !unicode.IsDigit(rune(defaultGateway[0])) {
 		if ip, err = net.LookupIP(defaultGateway); err != nil && len(ip) == 0 {
-			return nil, err
+			logger.ErrorMessage("network_context.init(): Error looking up IP of gateway \"%s\": %s", defaultGateway, err.Error())
+			panic(err)
 		}
-		c.defaultGateway = ip[0].String()
+		defaultGateway = ip[0].String()
 	}
-	c.defaultInterface = result[0][2]
+	defaultInterface = result[0][2]
 
 	// determine network service name for default device
-	if err = c.networksetup.Run([]string{ "-listallhardwareports" }); err != nil {
-		return nil, err
+	if err = networksetup.Run([]string{ "-listallhardwareports" }); err != nil {
+		logger.ErrorMessage("network_context.init(): Error running \"networksetup -listallhardwareports\": %s", err.Error())
+		panic(err)
 	}
 
-	matchDevice := "Device: " + c.defaultInterface
+	matchDevice := "Device: " + defaultInterface
 	prevLine := ""
-	scanner := bufio.NewScanner(bytes.NewReader(c.outputBuffer.Bytes()))
+	scanner := bufio.NewScanner(bytes.NewReader(outputBuffer.Bytes()))
 	for scanner.Scan() {
 		line = scanner.Text()
 		if line == matchDevice && len(prevLine) > 0 {
-			c.netServiceName = prevLine[15:]
+			netServiceName = prevLine[15:]
 			break;
 		}
 		prevLine = line
 	}
-	c.outputBuffer.Reset()
+	outputBuffer.Reset()
 
-	if len(c.netServiceName) == 0 {
-		return nil, fmt.Errorf(
+	if len(netServiceName) == 0 {
+		panic(fmt.Errorf(
 			"unable to determine default network service name for interface \"%s\"", 
-			c.defaultInterface,
-		)
+			defaultInterface,
+		))
 	}
+}
 
-	return c, nil
+func NewNetworkContext() NetworkContext {
+
+	return &networkContext{ 
+		origDNSServers:    []string{ "empty" },
+		origSearchDomains: []string{ "empty" },
+	}
 }
 
 func (c *networkContext) DefaultDeviceName() string {
-	return c.netServiceName
+	return netServiceName
 }
 
 func (c *networkContext) DefaultInterface() string {
-	return c.defaultInterface
+	return defaultInterface
 }
 
 func (c *networkContext) DefaultGateway() string {
-	return c.defaultGateway
+	return defaultGateway
 }
 
 func (c *networkContext) Clear() {

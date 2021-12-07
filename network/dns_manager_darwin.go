@@ -13,12 +13,23 @@ import (
 
 type dnsManager struct {
 	nc *networkContext
+
+	networksetup run.CLI
 }
 
 func (c *networkContext) NewDNSManager() (DNSManager, error) {
-	return &dnsManager{
+
+	var (
+		err error
+	)
+
+	m := &dnsManager{
 		nc: c,
-	}, nil
+	}
+	if m.networksetup, err = run.NewCLI("/usr/sbin/networksetup", home, &c.outputBuffer, &c.outputBuffer); err != nil {
+		return nil, err
+	}
+	return m, nil
 }
 
 func (m *dnsManager) AddDNSServers(servers []string) error {
@@ -34,27 +45,27 @@ func (m *dnsManager) AddDNSServers(servers []string) error {
 	)
 
 	// save existing configuration
-	if err = m.nc.networksetup.Run([]string{ "-getdnsservers", m.nc.netServiceName }); err != nil {
+	if err = m.networksetup.Run([]string{ "-getdnsservers", netServiceName }); err != nil {
 		return err
 	}
 	origDNSServers := m.nc.outputBuffer.String()
-	if origDNSServers != fmt.Sprintf("There aren't any DNS Servers set on %s.\n", m.nc.netServiceName) {
+	if origDNSServers != fmt.Sprintf("There aren't any DNS Servers set on %s.\n", netServiceName) {
 		m.nc.origDNSServers = strings.Fields(origDNSServers)
 	}
 	m.nc.outputBuffer.Reset()
 	
-	args := []string{ "-setdnsservers", m.nc.netServiceName }
+	args := []string{ "-setdnsservers", netServiceName }
 	args = append(args, servers...)
 
 	// set dns servers
-	if err = m.nc.networksetup.Run(args); err != nil {
+	if err = m.networksetup.Run(args); err != nil {
 		return err
 	}
 	// flush DNS cache
-	if err = run.RunAsAdminWithArgs([]string{ "/usr/bin/dscacheutil", "-flushcache" }, m.nc.nullOut, m.nc.nullOut); err != nil {
+	if err = run.RunAsAdminWithArgs([]string{ "/usr/bin/dscacheutil", "-flushcache" }, nullOut, nullOut); err != nil {
 		logger.ErrorMessage("Flushing DNS cache via \"dscacheutil\" failed: %s", err.Error())
 	}
-	if err = run.RunAsAdminWithArgs([]string{ "/usr/bin/killall", "-HUP", "mDNSResponder" }, m.nc.nullOut, m.nc.nullOut); err != nil {
+	if err = run.RunAsAdminWithArgs([]string{ "/usr/bin/killall", "-HUP", "mDNSResponder" }, nullOut, nullOut); err != nil {
 		logger.ErrorMessage("Killing \"mDNSResponder\" failed: %s", err.Error())
 	}
 
@@ -74,20 +85,20 @@ func (m *dnsManager) AddSearchDomains(domains []string) error {
 	)
 
 	// save existing configuration
-	if err = m.nc.networksetup.Run([]string{ "-getsearchdomains", m.nc.netServiceName }); err != nil {
+	if err = m.networksetup.Run([]string{ "-getsearchdomains", netServiceName }); err != nil {
 		return err
 	}
 	origSearchDomains := m.nc.outputBuffer.String()
-	if origSearchDomains != fmt.Sprintf("There aren't any Search Domains set on %s.\n", m.nc.netServiceName) {
+	if origSearchDomains != fmt.Sprintf("There aren't any Search Domains set on %s.\n", netServiceName) {
 		m.nc.origSearchDomains = strings.Fields(origSearchDomains)
 	}
 	m.nc.outputBuffer.Reset()
 
-	args := []string{ "-setsearchdomains", m.nc.netServiceName }
+	args := []string{ "-setsearchdomains", netServiceName }
 	args = append(args, domains...)
 
 	// set search domains
-	if err = m.nc.networksetup.Run(args); err != nil {
+	if err = m.networksetup.Run(args); err != nil {
 		return err
 	}
 	
@@ -101,9 +112,9 @@ func (m *dnsManager) Clear() {
 	)
 
 	// clear search domains
-	if err = m.nc.networksetup.Run(
+	if err = m.networksetup.Run(
 		append(
-			[]string{ "-setdnsservers", m.nc.netServiceName }, 
+			[]string{ "-setdnsservers", netServiceName }, 
 			m.nc.origDNSServers...,
 		),
 	); err != nil {
@@ -112,9 +123,9 @@ func (m *dnsManager) Clear() {
 	m.nc.outputBuffer.Reset()	
 
 	// clear dns servers
-	if err = m.nc.networksetup.Run(
+	if err = m.networksetup.Run(
 		append(
-			[]string{ "-setsearchdomains", m.nc.netServiceName }, 
+			[]string{ "-setsearchdomains", netServiceName }, 
 			m.nc.origSearchDomains...,
 		),
 	); err != nil {

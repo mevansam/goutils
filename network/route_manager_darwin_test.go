@@ -12,6 +12,7 @@ import (
 	"github.com/mevansam/goutils/network"
 	"github.com/mevansam/goutils/run"
 	"github.com/mitchellh/go-homedir"
+
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
 )
@@ -31,8 +32,7 @@ var _ = Describe("Route Manager", func() {
 			Fail(fmt.Sprintf("exec \"/sbin/ifconfig feth99 create\" failed: \n\n%s\n", outputBuffer.String()))
 		}
 
-		nc, err = network.NewNetworkContext()
-		Expect(err).NotTo(HaveOccurred())
+		nc = network.NewNetworkContext()
 	})
 
 	AfterEach(func() {
