@@ -7,8 +7,8 @@ type networkContext struct {
 	defaultGateway   string	
 }
 
-func NewNetworkContext() (NetworkContext, error) {
-	return &networkContext{}, nil
+func NewNetworkContext() NetworkContext {
+	return &networkContext{}
 }
 
 func (c *networkContext) DefaultDeviceName() string {
