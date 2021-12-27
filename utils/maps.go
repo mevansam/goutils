@@ -5,6 +5,7 @@ import (
 	"reflect"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/mevansam/goutils/logger"
@@ -70,7 +71,7 @@ func SetValueAtPath(keyPath string, value interface{}, valueMap interface{}) err
 			return err
 		}
 		if m, ok = reflect.Indirect(reflect.ValueOf(r)).Interface().(map[string]interface{}); !ok {
-			return fmt.Errorf("keys parent does is not of type map[string]interface{} type")
+			return fmt.Errorf("key's parent is not of type map[string]interface{} type")
 		}
 		m[pathElems[numPathElems-1]] = value
 
@@ -136,17 +137,33 @@ func GetValueAtPath(keyPath string, valueMap interface{}) (interface{}, error) {
 func getValueAtPath(keyPath []string, valueMap interface{}) (interface{}, error) {
 
 	var (
-		ok bool
-		m  map[string]interface{}
-		v  interface{}
+		err error
+		ok  bool
+		i   int
+		m   map[string]interface{}
+		a   []interface{}
+		v   interface{}
 	)
 
+
 	if m, ok = valueMap.(map[string]interface{}); !ok {
-		return nil, fmt.Errorf("given value map object is not of type map[string]interface{}")
-	}
-	if v, ok = m[keyPath[0]]; !ok {
-		// no value at given path so return nil
-		return nil, nil
+		if a, ok = valueMap.([]interface{}); !ok {
+			return nil, fmt.Errorf("given value map object is not of type map[string]interface{} or []interface{}")
+		}
+		// value is an array
+		if i, err = strconv.Atoi(keyPath[0]); err != nil {
+			return nil, fmt.Errorf("array index was not an int")
+		}
+		if i >= len(a) {
+			return nil, fmt.Errorf("array index greater than length of array %d", len(a))
+		}
+		v = a[i]
+
+	} else {
+		if v, ok = m[keyPath[0]]; !ok {
+			// no value at given path so return nil
+			return nil, nil
+		}	
 	}
 	if len(keyPath) == 1 {
 		return v, nil
