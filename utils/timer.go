@@ -79,7 +79,7 @@ func (t *ExecTimer) startAuthTimer(timeout time.Duration) {
 	for {
 		select {
 		case <-t.ctx.Done():
-			<-t.stop // ctx was cancaled and stop was called			
+			<-t.stop // ctx was cancelled and stop was called			
 			t.callbackError = t.ctx.Err()			
 			return
 		case <-t.stop:
