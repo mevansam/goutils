@@ -23,5 +23,9 @@ func (c *networkContext) DefaultGateway() string {
 	return c.defaultGateway
 }
 
+func (c *networkContext) DisableIPv6() error {
+	return nil
+}
+
 func (c *networkContext) Clear() {
 }

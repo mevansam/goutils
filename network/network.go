@@ -5,6 +5,8 @@ type NetworkContext interface {
 	DefaultInterface() string
 	DefaultGateway() string
 
+	DisableIPv6() error
+
 	NewDNSManager() (DNSManager, error)
 	NewRouteManager() (RouteManager, error)
 

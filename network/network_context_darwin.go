@@ -6,7 +6,6 @@ package network
 import (
 	"bufio"
 	"bytes"
-	"fmt"
 	"net"
 	"regexp"
 	"unicode"
@@ -20,6 +19,8 @@ import (
 type networkContext struct { 
 	outputBuffer bytes.Buffer
 
+	ipv6Disabled bool
+
 	origDNSServers    []string
 	origSearchDomains []string
 
@@ -29,19 +30,38 @@ type networkContext struct {
 var (
 	defaultGatewayPattern = regexp.MustCompile(`^default\s+([0-9]+\.[0-9]+\.[0-9]+\.[0-9]+)\s+\S+\s+(\S+[0-9]+)\s*$`)
 
+	netstat,
+	networksetup run.CLI
+
 	netServiceName,
 	defaultInterface,
 	defaultGateway string	
 )
 
 func init() {
+	readNetworkInfo()
+}
+
+func NewNetworkContext() NetworkContext {
+
+	readNetworkInfo()
+
+	return &networkContext{ 
+		origDNSServers:    []string{ "empty" },
+		origSearchDomains: []string{ "empty" },
+	}
+}
+
+func readNetworkInfo() {
+	if len(netServiceName) != 0 && 
+		len(defaultInterface) !=0 && 
+		len(defaultGateway) != 0 {
+		return
+	}
 
 	var (
 		err error
 		ok  bool
-
-		netstat,
-		networksetup run.CLI
 
 		outputBuffer bytes.Buffer
 		result       [][]string
@@ -54,18 +74,18 @@ func init() {
 	home, _ := homedir.Dir()
 
 	if netstat, err = run.NewCLI("/usr/sbin/netstat", home, &outputBuffer, &outputBuffer); err != nil {
-		logger.ErrorMessage("network_context.init(): Error creating CLI for /usr/sbin/netstat: %s", err.Error())
-		panic(err)
+		logger.ErrorMessage("networkContext.init(): Error creating CLI for /usr/sbin/netstat: %s", err.Error())
+		return
 	}
 	if networksetup, err = run.NewCLI("/usr/sbin/networksetup", home, &outputBuffer, &outputBuffer); err != nil {
-		logger.ErrorMessage("network_context.init(): Error creating CLI for /usr/sbin/networksetup: %s", err.Error())
-		panic(err)
+		logger.ErrorMessage("networkContext.init(): Error creating CLI for /usr/sbin/networksetup: %s", err.Error())
+		return
 	}
 
 	// retrieve current default route by querying the current route table
 	if err = netstat.Run([]string{ "-nrf", "inet" }); err != nil {
-		logger.ErrorMessage("network_context.init(): Error running \"netstat -nrf inet\": %s", err.Error())
-		panic(err)
+		logger.ErrorMessage("networkContext.init(): Error running \"netstat -nrf inet\": %s", err.Error())
+		return
 	}
 
 	results := utils.ExtractMatches(outputBuffer.Bytes(), map[string]*regexp.Regexp{
@@ -74,14 +94,15 @@ func init() {
 	outputBuffer.Reset()
 
 	if result, ok = results["gateway"]; !ok {
-		panic(fmt.Errorf("unable to determine the default gateway"))
+		logger.ErrorMessage("networkContext.init(): Unable to determine the default gateway")
+		return
 	}
 
 	defaultGateway = result[0][1]	
 	if !unicode.IsDigit(rune(defaultGateway[0])) {
 		if ip, err = net.LookupIP(defaultGateway); err != nil && len(ip) == 0 {
-			logger.ErrorMessage("network_context.init(): Error looking up IP of gateway \"%s\": %s", defaultGateway, err.Error())
-			panic(err)
+			logger.ErrorMessage("networkContext.init(): Error looking up IP of gateway \"%s\": %s", defaultGateway, err.Error())
+			return
 		}
 		defaultGateway = ip[0].String()
 	}
@@ -89,8 +110,8 @@ func init() {
 
 	// determine network service name for default device
 	if err = networksetup.Run([]string{ "-listallhardwareports" }); err != nil {
-		logger.ErrorMessage("network_context.init(): Error running \"networksetup -listallhardwareports\": %s", err.Error())
-		panic(err)
+		logger.ErrorMessage("networkContext.init(): Error running \"networksetup -listallhardwareports\": %s", err.Error())
+		return
 	}
 
 	matchDevice := "Device: " + defaultInterface
@@ -107,18 +128,11 @@ func init() {
 	outputBuffer.Reset()
 
 	if len(netServiceName) == 0 {
-		panic(fmt.Errorf(
-			"unable to determine default network service name for interface \"%s\"", 
+		logger.ErrorMessage(
+			"networkContext.init(): Unable to determine default network service name for interface \"%s\"", 
 			defaultInterface,
-		))
-	}
-}
-
-func NewNetworkContext() NetworkContext {
-
-	return &networkContext{ 
-		origDNSServers:    []string{ "empty" },
-		origSearchDomains: []string{ "empty" },
+		)
+		return
 	}
 }
 
@@ -134,6 +148,15 @@ func (c *networkContext) DefaultGateway() string {
 	return defaultGateway
 }
 
+func (c *networkContext) DisableIPv6() error {
+	if err := networksetup.Run([]string{ "-setv6off", netServiceName }); err != nil {
+		logger.ErrorMessage("networkContext.DisableIPv6(): Error running \"networksetup -setv6off %s\": %s", netServiceName, err.Error())
+		return err
+	}
+	c.ipv6Disabled = true
+	return nil
+}
+
 func (c *networkContext) Clear() {
 	
 	var (
@@ -142,6 +165,14 @@ func (c *networkContext) Clear() {
 		dnsManager   DNSManager
 		routeManager RouteManager
 	)
+
+	if c.ipv6Disabled {
+		if err := networksetup.Run([]string{ "-setv6automatic", netServiceName }); err != nil {
+			logger.ErrorMessage("networkContext.DisableIPv6(): Error running \"networksetup -setv6automatic %s\": %s", netServiceName, err.Error())
+		}	else {
+			c.ipv6Disabled = false
+		}
+	}
 
 	if dnsManager, err = c.NewDNSManager(); err != nil {
 		logger.ErrorMessage(
