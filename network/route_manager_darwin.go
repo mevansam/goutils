@@ -28,6 +28,8 @@ import (
 //   the entire IPv4 range of 0.0.0.0/0. i.e. 0.0.0.0/1 and 128.0.0.0/1
 // 			/sbin/route add inet -net 0.0.0.0 192.168.111.1 128.0.0.0
 // 			/sbin/route add inet -net 128.0.0.0 192.168.111.1 128.0.0.0
+//   OR see
+//      https://itectec.com/askdifferent/macos-how-to-change-the-default-gateway-of-a-mac-osx-machine/
 //
 // * cleanup
 // 			/sbin/route delete inet -net 34.204.21.102
@@ -129,14 +131,15 @@ func (m *routeManager) Clear() {
 	if len(m.nc.routedIPs) > 0 {
 		for _, ip := range m.nc.routedIPs {
 			if err = m.route.Run([]string{ "delete", "-inet", "-net", ip }); err != nil {
-				logger.ErrorMessage("routeManager.Clear(): deleting route to %s: %s", ip, err.Error())
+				logger.ErrorMessage("routeManager.Clear(): Deleting route to %s: %s", ip, err.Error())
 			}
 		}
 	}
 
 	// clear default route if any
-	_ = m.route.Run([]string{ "delete", "-inet", "-net", "0.0/1" })
-	_ = m.route.Run([]string{ "delete", "-inet", "-net", "128.0/1" })	
+	if err = addDefaultRoute(m.route, defaultGateway); err != nil {
+		logger.ErrorMessage("routeManager.Clear(): Restoring default route to %s: %s", defaultGateway, err.Error())
+	}
 }
 
 func (i *routableInterface) MakeDefaultRoute() error {
@@ -150,10 +153,10 @@ func addDefaultRoute(route run.CLI, gateway string) error {
 	)
 
 	// create default route via interface's gateway
-	if err = route.Run([]string{ "add", "-inet", "-net", "0.0.0.0", gateway, "128.0.0.0" }); err != nil {
+	if err = route.Run([]string{ "delete", "default" }); err != nil {
 		return err
 	}
-	if err = route.Run([]string{ "add", "-inet", "-net", "128.0.0.0", gateway, "128.0.0.0" }); err != nil {
+	if err = route.Run([]string{ "add", "default", gateway }); err != nil {
 		return err
 	}
 	return nil
