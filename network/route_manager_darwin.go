@@ -5,6 +5,7 @@ package network
 
 import (
 	"net"
+	"strings"
 
 	"github.com/mevansam/goutils/logger"
 	"github.com/mevansam/goutils/run"
@@ -106,14 +107,24 @@ func (m *routeManager) AddExternalRouteToIPs(ips []string) error {
 
 	var (
 		err error
+
+		ipCidr string
 	)
 
 	for _, ip := range ips {
-		if err = m.route.Run([]string{ "add", "-inet", "-net", ip, defaultGateway, "255.255.255.255" }); err != nil {
-			return err
+		if strings.HasSuffix(ip, ".0") {
+			ipCidr = ip[:len(ip)-2]+"/32"
+		} else {
+			ipCidr = ip+"/32"
+		}
+		if err = m.route.Run([]string{ "add", "-inet", "-net", ipCidr, defaultGateway, "255.255.255.255" }); err != nil {
+			logger.ErrorMessage(
+				"routeManager.AddExternalRouteToIPs(): Unable to add static route to IP %s via gateway %s: %s", 
+				ip, defaultGateway, err.Error())
+		} else {
+			m.nc.routedIPs = append(m.nc.routedIPs, ipCidr)
 		}
 	}
-	m.nc.routedIPs = ips
 	return nil
 }
 
@@ -134,6 +145,7 @@ func (m *routeManager) Clear() {
 				logger.ErrorMessage("routeManager.Clear(): Deleting route to %s: %s", ip, err.Error())
 			}
 		}
+		m.nc.routedIPs = nil
 	}
 
 	// clear default route if any
