@@ -373,7 +373,7 @@ func (r *request) RespondWithError(httpError string, code int) *request {
 	return r
 }
 
-func HandleAuthHeaders(mockAuthCrypt rest.AuthCrypt, request, response string) (func(w http.ResponseWriter, r *http.Request, body string) *string) {
+func HandleAuthHeaders(mockAuthCrypt rest.AuthCrypt, request, response string, validators ...func(expected, actual interface{}) bool) (func(w http.ResponseWriter, r *http.Request, body string) *string) {
 	
 	var expectedRequest interface{}
 	if len(request) > 0 {
@@ -403,7 +403,17 @@ func HandleAuthHeaders(mockAuthCrypt rest.AuthCrypt, request, response string) (
 			err := authRespToken.DecryptAndDecodePayload(strings.NewReader(body), &actualRequest)
 			Expect(err).ToNot(HaveOccurred())
 			logger.TraceMessage("MockServer: decrypted and decoded request Body: %# v", actualRequest)
-			Expect(reflect.DeepEqual(expectedRequest, actualRequest)).To(BeTrue())
+			if (len(validators) > 0) {
+				testEquality := false
+				for _, v := range validators {
+					testEquality = testEquality || v(expectedRequest, actualRequest)
+				}
+				if testEquality {
+					Expect(reflect.DeepEqual(expectedRequest, actualRequest)).To(BeTrue())	
+				}
+			} else {
+				Expect(reflect.DeepEqual(expectedRequest, actualRequest)).To(BeTrue())
+			}
 		} else {
 			Expect(expectedRequest).To(BeNil())
 		}
