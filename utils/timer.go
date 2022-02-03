@@ -2,6 +2,7 @@ package utils
 
 import (
 	"context"
+	"sync"
 	"time"
 )
 
@@ -14,8 +15,9 @@ import (
 // starts it invokes the call back to determin
 // the trigger interval.
 type ExecTimer struct {
-	ctx  context.Context
-	stop chan bool
+	ctx      context.Context
+	inflight sync.WaitGroup
+	stop     chan bool
 
 	callback     func() (time.Duration, error)
 	timeoutTimer *time.Ticker
@@ -45,7 +47,12 @@ func (t *ExecTimer) Start(timeout time.Duration) error {
 		t.invokeCallback()
 		return t.callbackError
 	}	
-	go t.startAuthTimer(timeout)
+	
+	// consider inflight until next 
+	// invocation is scheduled
+	t.inflight.Add(1)
+
+	go t.startTimer(timeout)
 	return nil
 }
 
@@ -55,7 +62,14 @@ func (t *ExecTimer) invokeCallback() bool {
 		timeout time.Duration
 	)
 
+	// invocation is inflight
+	t.inflight.Add(1)
 	if timeout, err = t.callback(); err == nil && timeout == 0 {	
+		// inflight is done as returning false 
+		// will not cancel the timer loop
+		t.inflight.Done()
+
+		// resume timer loop
 		return false
 	}
 	if t.timeoutTimer != nil {
@@ -64,18 +78,30 @@ func (t *ExecTimer) invokeCallback() bool {
 	}
 	if err != nil {
 		t.callbackError = err
+
+		// inflight is done as error
+		// should exit the timer loop 
+		t.inflight.Done()
+
 	} else {
-		go t.startAuthTimer(timeout)
+		go t.startTimer(timeout)
 	}
-	// returns true to exit the timer loop as a 
-	// either a new timeout has been set or callback 
-	// returned an error
+
+	// returns true to exit the timer loop as
+	// either a new timeout has been set or  
+	// callback returned an error
 	return true
 }
 
-func (t *ExecTimer) startAuthTimer(timeout time.Duration) {
-	
+func (t *ExecTimer) startTimer(timeout time.Duration) {
+
+	// schedule next invocation
 	t.timeoutTimer = time.NewTicker(timeout * time.Millisecond)
+	// inflight invocation is done as
+	// next invocation has been scheduled
+	t.inflight.Done()
+
+	// timer loop
 	for {
 		select {
 		case <-t.ctx.Done():
@@ -93,6 +119,8 @@ func (t *ExecTimer) startAuthTimer(timeout time.Duration) {
 }
 
 func (t *ExecTimer) Stop() error {
+	t.inflight.Wait()
+
 	if t.timeoutTimer != nil {
 		t.timeoutTimer.Stop()
 		t.timeoutTimer = nil
