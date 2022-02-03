@@ -397,8 +397,6 @@ func HandleAuthHeaders(mockAuthCrypt rest.AuthCrypt, request, response string, v
 
 		// retrieve decrypted request payload
 		if len(body) > 0 {
-			Expect(expectedRequest).NotTo(BeNil())
-
 			var actualRequest interface{}
 			err := authRespToken.DecryptAndDecodePayload(strings.NewReader(body), &actualRequest)
 			Expect(err).ToNot(HaveOccurred())
@@ -409,9 +407,11 @@ func HandleAuthHeaders(mockAuthCrypt rest.AuthCrypt, request, response string, v
 					testEquality = testEquality || v(expectedRequest, actualRequest)
 				}
 				if testEquality {
+					Expect(expectedRequest).NotTo(BeNil())
 					Expect(reflect.DeepEqual(expectedRequest, actualRequest)).To(BeTrue())	
 				}
 			} else {
+				Expect(expectedRequest).NotTo(BeNil())
 				Expect(reflect.DeepEqual(expectedRequest, actualRequest)).To(BeTrue())
 			}
 		} else {
