@@ -35,13 +35,18 @@ func NewCrypt(key []byte) (*Crypt, error) {
 
 func (c *Crypt) EncryptB64(plainData string) (string, error) {
 
+	return c.EncryptB64Raw([]byte(plainData))
+}
+
+func (c *Crypt) EncryptB64Raw(plainData []byte) (string, error) {
+
 	var (
 		err error
 
 		cipherData []byte
 	)
 
-	if cipherData, err = c.Encrypt([]byte(plainData)); err != nil {
+	if cipherData, err = c.Encrypt(plainData); err != nil {
 		return "", err
 	}
 	return base64.StdEncoding.EncodeToString(cipherData), nil
@@ -64,18 +69,30 @@ func (c *Crypt) Encrypt(plainData []byte) ([]byte, error) {
 func (c *Crypt) DecryptB64(cipherDataB64 string) (string, error) {
 
 	var (
+		err       error
+		plainData []byte
+	)
+	if plainData, err = c.DecryptB64Raw(cipherDataB64); err != nil {
+		return "", err
+	}
+	return string(plainData), nil
+}
+
+func (c *Crypt) DecryptB64Raw(cipherDataB64 string) ([]byte, error) {
+
+	var (
 		err error
 
 		cipherData, plainData []byte
 	)
 
 	if cipherData, err = base64.StdEncoding.DecodeString(cipherDataB64); err != nil {
-		return "", err
+		return nil, err
 	}
 	if plainData, err = c.Decrypt(cipherData); err != nil {
-		return "", err
+		return nil, err
 	}
-	return string(plainData), nil
+	return plainData, nil
 }
 
 func (c *Crypt) Decrypt(cipherData []byte) ([]byte, error) {
