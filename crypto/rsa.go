@@ -1,14 +1,18 @@
 package crypto
 
 import (
+	"bytes"
+	"compress/zlib"
 	"crypto"
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/sha256"
 	"crypto/x509"
 	"encoding/base64"
+	"encoding/binary"
 	"encoding/pem"
 	"fmt"
+	"io"
 	"io/ioutil"
 	"strings"
 
@@ -157,6 +161,112 @@ func (k *RSAKey) DecryptBase64(ciphertext string) ([]byte, error) {
 		return nil, nil
 	}
 	return k.Decrypt(decoded)
+}
+
+// compresses and encrypts the given data payload with AES, encrypts 
+// and prepends the 256 bit AES key to the encrypted result using 
+// the RSA key
+func (k *RSAKey) EncryptPack(data []byte) ([]byte, error) {
+
+	var (
+		err error	
+		
+		zlibWriter     *zlib.Writer
+		compressedData bytes.Buffer
+
+		crypt *Crypt
+
+		encryptedData,
+		encryptedKey,
+		cipherData []byte
+	)
+
+	// compress payload
+	zlibWriter = zlib.NewWriter(&compressedData)
+	if _, err = zlibWriter.Write(data); err != nil {
+		zlibWriter.Close()
+		return nil, err
+	}
+	zlibWriter.Close()
+
+	// create a 256 bit key to encrypt the config data
+	cryptKey := make([]byte, 32)
+	if _, err := rand.Read(cryptKey); err != nil {
+		return nil, err
+	}
+
+	// encrypt config data
+	if crypt, err = NewCrypt(cryptKey); err != nil {
+		return nil, err
+	}
+	if encryptedData, err = crypt.Encrypt(compressedData.Bytes()); err != nil {
+		return nil, err
+	}
+
+	// encrypt crypt key
+	if encryptedKey, err = rsa.EncryptOAEP(sha256.New(), rand.Reader, &k.key.PublicKey, cryptKey, nil); err != nil {
+		return nil, err
+	}
+
+	// create encrypted data payload
+	l := len(encryptedData)
+	ll := uint32(l)
+	cipherData = make([]byte, 4 + l + len(encryptedKey))
+	binary.LittleEndian.PutUint32(cipherData, ll)
+	copy(cipherData[4:], encryptedData)
+	copy(cipherData[4+l:], encryptedKey)
+
+	return cipherData, nil
+}
+
+// decrypts and unpacks a payload encrypted using the above algorithm
+func (k *RSAKey) DecryptUnpack(cipherData []byte) ([]byte, error) {
+
+	var (
+		err error	
+
+		crypt    *Crypt
+		cryptKey []byte
+
+		encryptedData,
+		encryptedKey []byte
+				
+		compressedData []byte
+		reader         io.ReadCloser
+
+		data bytes.Buffer
+	)
+
+	// Get encrypted parts
+	ll :=  binary.LittleEndian.Uint32(cipherData[0:4])
+	l := int(ll)
+	encryptedData = make([]byte, l)
+	encryptedKey = make([]byte, len(cipherData) - 4 - l)
+	copy(encryptedData, cipherData[4:4+l])
+	copy(encryptedKey, cipherData[4+l:])
+
+	// decrypt AES key
+	if cryptKey, err = rsa.DecryptOAEP(sha256.New(), rand.Reader, k.key, encryptedKey, nil); err != nil {
+		return nil, err
+	}
+
+	// decrypt config data
+	if crypt, err = NewCrypt(cryptKey); err != nil {
+		return nil, err
+	}
+	if compressedData, err = crypt.Decrypt(encryptedData); err != nil {
+		return nil, err
+	}
+
+	// unpack compressed data
+	if reader, err = zlib.NewReader(bytes.NewBuffer(compressedData)); err != nil {
+		return nil, err
+	}
+	if _, err = io.Copy(&data, reader); err != nil {
+		return nil, err
+	}
+
+	return data.Bytes(), nil
 }
 
 // returns the PEM encoded private key

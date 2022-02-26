@@ -95,6 +95,17 @@ var _ = Describe("RSA", func() {
 
 			Expect(string(decryptedText)).To(Equal(plainText))
 		})
+
+		It("encrypts and decrypts packed data using AES+RSA", func() {
+			rsaKey, err = crypto.NewRSAKey()
+			Expect(err).ToNot(HaveOccurred())
+
+			cipherData, err := rsaKey.EncryptPack([]byte(dataToEncryptPack))
+			Expect(err).ToNot(HaveOccurred())
+			plainData, err := rsaKey.DecryptUnpack(cipherData)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(string(plainData)).To(Equal(dataToEncryptPack))
+		})
 	})
 })
 
@@ -167,3 +178,8 @@ lLhseuUfbVhGtkBq8L2xp56Kg/mLRVFdA3iYm55GtWZaP9TmWSDz2veC1V+0EYKU
 Vv+1cwseYxLec65LJvbU0w+fMztu89jK/iJdak68pkTSgf/fYokuGrTtFN7Xi1GI
 kWDOBLVsmoOLdLML0YxNAWUCAwEAAQ==
 -----END PUBLIC KEY-----`
+
+const dataToEncryptPack = `Hey, diddle, diddle, the cat and the fiddle
+The cow jumped over the moon
+The little dog laughed to see such fun
+And the dish ran away with the spoon`
