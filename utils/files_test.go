@@ -63,7 +63,7 @@ var _ = Describe("file utils tests", func() {
 			// pick a chunk size between 1 and 99
 			chunkSize := rand.Intn(99) + 1
 
-			logger.TraceMessage("Reading file %s in chunks", tmpfile1.Name())
+			logger.DebugMessage("Reading file %s in chunks", tmpfile1.Name())
 			file, err = os.Open(tmpfile1.Name())
 			Expect(err).ToNot(HaveOccurred())
 			defer file.Close()
@@ -71,7 +71,7 @@ var _ = Describe("file utils tests", func() {
 			fileInfo, err := file.Stat()
 			Expect(err).ToNot(HaveOccurred())
 			size := int(fileInfo.Size())
-			logger.TraceMessage("Reading file of size %d in chunks", size)
+			logger.DebugMessage("Reading file of size %d in chunks", size)
 
 			numChunks := size / chunkSize
 			lastPartialChunkSize := size % chunkSize
@@ -79,14 +79,14 @@ var _ = Describe("file utils tests", func() {
 				numChunks++
 			}
 			chunkedData := make([]strings.Builder, numChunks)
-			logger.TraceMessage("Reading %d chunks of file each of size %d", numChunks, chunkSize)
+			logger.DebugMessage("Reading %d chunks of file each of size %d", numChunks, chunkSize)
 
 			wg.Add(numChunks)
 			for i := 0; i < numChunks; i++ {
 
 				// pick a buffer size which is a fraction of the chunk size to read a chunk
 				bufferSize := rand.Intn(chunkSize) + 1
-				logger.TraceMessage("Reading chunk %d using a buffer with size %d", i, bufferSize)
+				logger.DebugMessage("Reading chunk %d using a buffer with size %d", i, bufferSize)
 
 				go func(chunkIndex, bufferSize int) {
 					defer wg.Done()
@@ -106,7 +106,7 @@ var _ = Describe("file utils tests", func() {
 					Expect(err).ToNot(HaveOccurred())
 					Expect(p).To(Equal(int64(0)))
 
-					logger.TraceMessage("Reading chunk %d", chunkIndex)
+					logger.DebugMessage("Reading chunk %d", chunkIndex)
 					for {
 						n, err := reader.Read(buffer)
 						chunkedData[chunkIndex].Write(buffer[0:n])
@@ -117,7 +117,7 @@ var _ = Describe("file utils tests", func() {
 							Expect(err).ToNot(HaveOccurred())
 						}
 					}
-					logger.TraceMessage("Read chunk %d: %s", chunkIndex, chunkedData[chunkIndex].String())
+					logger.DebugMessage("Read chunk %d: %s", chunkIndex, chunkedData[chunkIndex].String())
 				}(i, bufferSize)
 			}
 			wg.Wait()
@@ -148,27 +148,27 @@ var _ = Describe("file utils tests", func() {
 			// pick a chunk size between 1 and 99
 			chunkSize := rand.Intn(99) + 1
 
-			logger.TraceMessage("Writing file %s in chunks", tmpfile2.Name())
+			logger.DebugMessage("Writing file %s in chunks", tmpfile2.Name())
 			file, err = os.OpenFile(tmpfile2.Name(), os.O_RDWR, 0644)
 			Expect(err).ToNot(HaveOccurred())
 			defer file.Close()
 
 			size := len(content)
-			logger.TraceMessage("Writing data of size %d in chunks", size)
+			logger.DebugMessage("Writing data of size %d in chunks", size)
 
 			numChunks := size / chunkSize
 			lastPartialChunkSize := size % chunkSize
 			if lastPartialChunkSize > 0 {
 				numChunks++
 			}
-			logger.TraceMessage("Writing %d chunks of data each of size %d", numChunks, chunkSize)
+			logger.DebugMessage("Writing %d chunks of data each of size %d", numChunks, chunkSize)
 
 			wg.Add(numChunks)
 			for i := 0; i < numChunks; i++ {
 
 				// pick a buffer size which is a fraction of the chunk size to write a chunk data
 				bufferSize := rand.Intn(chunkSize) + 1
-				logger.TraceMessage("Writing chunk %d, %d chars at a time", i, bufferSize)
+				logger.DebugMessage("Writing chunk %d, %d chars at a time", i, bufferSize)
 
 				go func(chunkIndex, bufferSize int) {
 					defer wg.Done()
@@ -193,7 +193,7 @@ var _ = Describe("file utils tests", func() {
 						end = size
 					}
 
-					logger.TraceMessage("Writing chunk %d: %s", chunkIndex, content[offset:end])
+					logger.DebugMessage("Writing chunk %d: %s", chunkIndex, content[offset:end])
 					for offset < end {
 
 						advance := offset + bufferSize
@@ -204,7 +204,7 @@ var _ = Describe("file utils tests", func() {
 						offset = offset + n
 						Expect(err).ToNot(HaveOccurred())
 					}
-					logger.TraceMessage("Chunk %d written", chunkIndex)
+					logger.DebugMessage("Chunk %d written", chunkIndex)
 				}(i, bufferSize)
 			}
 			wg.Wait()

@@ -144,8 +144,8 @@ func (ms *MockHttpServer) mockResponseReflector(w http.ResponseWriter, r *http.R
 		hasError bool
 	)
 
-	logger.TraceMessage("MockServer: request URI: %s", r.RequestURI)
-	logger.TraceMessage("MockServer: request Headers: %s", r.Header)
+	logger.DebugMessage("MockServer: request URI: %s", r.RequestURI)
+	logger.DebugMessage("MockServer: request Headers: %s", r.Header)
 
 	if size, err = buffer.ReadFrom(r.Body); err != nil {
 		http.Error(w, 
@@ -155,7 +155,7 @@ func (ms *MockHttpServer) mockResponseReflector(w http.ResponseWriter, r *http.R
 		return
 	}
 	requestBody = buffer.String()
-	logger.TraceMessage("MockServer: request Body (%d): %s", size, requestBody)
+	logger.DebugMessage("MockServer: request Body (%d): %s", size, requestBody)
 
 	// expected request
 	if len(ms.expectRequests) == 0 {
@@ -400,7 +400,7 @@ func HandleAuthHeaders(mockAuthCrypt rest.AuthCrypt, request, response string, v
 			var actualRequest interface{}
 			err := authRespToken.DecryptAndDecodePayload(strings.NewReader(body), &actualRequest)
 			Expect(err).ToNot(HaveOccurred())
-			logger.TraceMessage("MockServer: decrypted and decoded request Body: %# v", actualRequest)
+			logger.DebugMessage("MockServer: decrypted and decoded request Body: %# v", actualRequest)
 			if (len(validators) > 0) {
 				testEquality := false
 				for _, v := range validators {

@@ -222,7 +222,7 @@ var _ = Describe("json stream parser tests", func() {
 			parser := persistence.NewJSONStreamParser(persistence.NewMap())
 			unmarshalledData, err = parser.Parse(strings.NewReader(jsonDocument))
 			Expect(err).ToNot(HaveOccurred())
-			logger.TraceMessage("unmarshalled data: %# v", unmarshalledData)
+			logger.DebugMessage("unmarshalled data: %# v", unmarshalledData)
 
 			Expect(unmarshalledData).To(Equal(expectedData))
 		})
@@ -245,7 +245,7 @@ func (j jsonUnmarshallerTest) Unmarshal(
 	error,
 ) {
 
-	logger.TraceMessage("unmarshal => path: %#v, key: \"%s\", elemType: %#v, value: %#v\n",
+	logger.DebugMessage("unmarshal => path: %#v, key: \"%s\", elemType: %#v, value: %#v\n",
 		path, key, elemType, value)
 	j.unmarshal(path, key, elemType, value)
 	return j, j, nil
@@ -257,7 +257,7 @@ func (j jsonUnmarshallerTest) Finalize(
 	node persistence.Unmarshaller,
 ) error {
 
-	logger.TraceMessage("finalize => path: %#v, key: \"%s\"\n", path, key)
+	logger.DebugMessage("finalize => path: %#v, key: \"%s\"\n", path, key)
 	j.finalize(path, key)
 	return nil
 }
