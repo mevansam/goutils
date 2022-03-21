@@ -42,7 +42,7 @@ func RunAsAdminWithArgs(cmdArgs []string, outputBuffer, errorBuffer io.Writer) e
 	}
 	args := []string{ "-s", "-E" }
 	args = append(args, cmdArgs...)
-	return cli.Run(args)
+	return cli.RunWithEnv(args, []string{"__CB_RUN_AS_ROOT__=1"})
 }
 
 func TerminateProcess(psRE string, outputBuffer, errorBuffer io.Writer) error {
