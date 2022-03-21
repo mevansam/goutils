@@ -5,6 +5,8 @@ package run
 import (
 	"io"
 	"os"
+	"strings"
+	"syscall"
 
 	"golang.org/x/sys/windows"
 )
@@ -14,7 +16,20 @@ func RunAsAdmin(outputBuffer, errorBuffer io.Writer) error {
 }
 
 func RunAsAdminWithArgs(cmdArgs []string, outputBuffer, errorBuffer io.Writer) error {
-	return nil
+
+	verb := "runas"
+	exe, _ := os.Executable()
+	cwd, _ := os.Getwd()
+	args := strings.Join(os.Args[1:], " ")
+
+	verbPtr, _ := syscall.UTF16PtrFromString(verb)
+	exePtr, _ := syscall.UTF16PtrFromString(exe)
+	cwdPtr, _ := syscall.UTF16PtrFromString(cwd)
+	argPtr, _ := syscall.UTF16PtrFromString(args)
+
+	var showCmd int32 = 1 //SW_NORMAL
+
+	return windows.ShellExecute(0, verbPtr, exePtr, argPtr, cwdPtr, showCmd)
 }
 
 func TerminateProcess(psRE string) error {
@@ -57,5 +72,5 @@ func IsAdmin() (bool, error) {
 
 	// Also note that an admin is _not_ necessarily considered elevated.
 	// For elevation see https://github.com/mozey/run-as-admin
-	return admin && token.IsElevated(), nil
+	return admin /*&& token.IsElevated()*/, nil
 }
