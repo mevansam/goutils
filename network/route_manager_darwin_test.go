@@ -43,7 +43,7 @@ var _ = Describe("Route Manager", func() {
 		}
 	})
 
-	FIt("creates a new default gateway with routes that bypass it", func() {
+	It("creates a new default gateway with routes that bypass it", func() {
 
 		isAdmin, err := run.IsAdmin()
 		Expect(err).NotTo(HaveOccurred())

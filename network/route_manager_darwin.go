@@ -8,7 +8,6 @@ import (
 	"strings"
 
 	"github.com/mevansam/goutils/logger"
-	"github.com/mevansam/goutils/run"
 )
 
 // List of commands to run to configure
@@ -37,31 +36,16 @@ import (
 
 type routeManager struct {	
 	nc *networkContext
-
-	ifconfig,
-	route run.CLI
 }
 
 type routableInterface struct {
-	route run.CLI
-
 	gatewayAddress string
 }
 
 func (c *networkContext) NewRouteManager() (RouteManager, error) {
 
-	var (
-		err error
-	)
-
 	rm := &routeManager{
 		nc: c,
-	}
-	if rm.ifconfig, err = run.NewCLI("/sbin/ifconfig", home, nullOut, nullOut); err != nil {
-		return nil, err
-	}
-	if rm.route, err = run.NewCLI("/sbin/route", home, &c.outputBuffer, &c.outputBuffer); err != nil {
-		return nil, err
 	}
 	return rm, nil
 }
@@ -90,15 +74,14 @@ func (m *routeManager) NewRoutableInterface(ifaceName, address string) (Routable
 	gatewayAddress := gatewayIP.String()
 
 	// add tunnel IP to local tunnel interface
-	if err = m.ifconfig.Run([]string{ ifaceName, "inet", address, ip.String(), "up" }); err != nil {
+	if err = ifconfig.Run([]string{ ifaceName, "inet", address, ip.String(), "up" }); err != nil {
 		return nil, err
 	}	
 	// create route to tunnel gateway via tunnel interface
-	if err = m.route.Run([]string{ "add", "-inet", "-net", gatewayAddress, "-interface", ifaceName }); err != nil {
+	if err = route.Run([]string{ "add", "-inet", "-net", gatewayAddress, "-interface", ifaceName }); err != nil {
 		return nil, err
 	}
 	return &routableInterface{
-		route:          m.route,
 		gatewayAddress: gatewayAddress,
 	}, nil
 }
@@ -110,6 +93,7 @@ func (m *routeManager) AddExternalRouteToIPs(ips []string) error {
 
 		ipCidr string
 	)
+	defaultGateway := Network.DefaultIPv4Gateway.GatewayIP.String()
 
 	for _, ip := range ips {
 		if strings.HasSuffix(ip, ".0") {
@@ -117,7 +101,7 @@ func (m *routeManager) AddExternalRouteToIPs(ips []string) error {
 		} else {
 			ipCidr = ip+"/32"
 		}
-		if err = m.route.Run([]string{ "add", "-inet", "-net", ipCidr, defaultGateway, "255.255.255.255" }); err != nil {
+		if err = route.Run([]string{ "add", "-inet", "-net", ipCidr, defaultGateway, "255.255.255.255" }); err != nil {
 			logger.ErrorMessage(
 				"routeManager.AddExternalRouteToIPs(): Unable to add static route to IP %s via gateway %s: %s", 
 				ip, defaultGateway, err.Error())
@@ -129,7 +113,7 @@ func (m *routeManager) AddExternalRouteToIPs(ips []string) error {
 }
 
 func (m *routeManager) AddDefaultRoute(gateway string) error {
-	return addDefaultRoute(m.route, gateway)
+	return addDefaultRoute(gateway)
 }
 
 func (m *routeManager) Clear() {
@@ -137,11 +121,12 @@ func (m *routeManager) Clear() {
 	var (
 		err error
 	)
+	defaultGateway := Network.DefaultIPv4Gateway.GatewayIP.String()
 
 	// clear routed ips if any
 	if len(m.nc.routedIPs) > 0 {
 		for _, ip := range m.nc.routedIPs {
-			if err = m.route.Run([]string{ "delete", "-inet", "-net", ip }); err != nil {
+			if err = route.Run([]string{ "delete", "-inet", "-net", ip }); err != nil {
 				logger.ErrorMessage("routeManager.Clear(): Deleting route to %s: %s", ip, err.Error())
 			}
 		}
@@ -149,16 +134,16 @@ func (m *routeManager) Clear() {
 	}
 
 	// clear default route if any
-	if err = addDefaultRoute(m.route, defaultGateway); err != nil {
+	if err = addDefaultRoute(defaultGateway); err != nil {
 		logger.ErrorMessage("routeManager.Clear(): Restoring default route to %s: %s", defaultGateway, err.Error())
 	}
 }
 
 func (i *routableInterface) MakeDefaultRoute() error {
-	return addDefaultRoute(i.route, i.gatewayAddress)
+	return addDefaultRoute(i.gatewayAddress)
 }
 
-func addDefaultRoute(route run.CLI, gateway string) error {
+func addDefaultRoute(gateway string) error {
 
 	var (
 		err error

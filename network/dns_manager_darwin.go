@@ -13,21 +13,12 @@ import (
 
 type dnsManager struct {
 	nc *networkContext
-
-	networksetup run.CLI
 }
 
 func (c *networkContext) NewDNSManager() (DNSManager, error) {
 
-	var (
-		err error
-	)
-
 	m := &dnsManager{
 		nc: c,
-	}
-	if m.networksetup, err = run.NewCLI("/usr/sbin/networksetup", home, &c.outputBuffer, &c.outputBuffer); err != nil {
-		return nil, err
 	}
 	return m, nil
 }
@@ -35,9 +26,9 @@ func (c *networkContext) NewDNSManager() (DNSManager, error) {
 func (m *dnsManager) AddDNSServers(servers []string) error {
 	defer func() {
 		if err := recover(); err != nil {
-			logger.ErrorMessage("DNSManager.AddDNSServers(): Error output: %s", m.nc.outputBuffer.String())
+			logger.ErrorMessage("DNSManager.AddDNSServers(): Error output: %s", outputBuffer.String())
 		}
-		m.nc.outputBuffer.Reset()
+		outputBuffer.Reset()
 	}()
 
 	var(
@@ -45,20 +36,20 @@ func (m *dnsManager) AddDNSServers(servers []string) error {
 	)
 
 	// save existing configuration
-	if err = m.networksetup.Run([]string{ "-getdnsservers", netServiceName }); err != nil {
+	if err = networksetup.Run([]string{ "-getdnsservers", netServiceName }); err != nil {
 		return err
 	}
-	origDNSServers := m.nc.outputBuffer.String()
+	origDNSServers := outputBuffer.String()
 	if origDNSServers != fmt.Sprintf("There aren't any DNS Servers set on %s.\n", netServiceName) {
 		m.nc.origDNSServers = strings.Fields(origDNSServers)
 	}
-	m.nc.outputBuffer.Reset()
+	outputBuffer.Reset()
 	
 	args := []string{ "-setdnsservers", netServiceName }
 	args = append(args, servers...)
 
 	// set dns servers
-	if err = m.networksetup.Run(args); err != nil {
+	if err = networksetup.Run(args); err != nil {
 		return err
 	}
 	// flush DNS cache
@@ -75,9 +66,9 @@ func (m *dnsManager) AddDNSServers(servers []string) error {
 func (m *dnsManager) AddSearchDomains(domains []string) error {
 	defer func() {
 		if err := recover(); err != nil {
-			logger.ErrorMessage("DNSManager.AddSearchDomains(): Error output: %s", m.nc.outputBuffer.String())
+			logger.ErrorMessage("DNSManager.AddSearchDomains(): Error output: %s", outputBuffer.String())
 		}
-		m.nc.outputBuffer.Reset()
+		outputBuffer.Reset()
 	}()
 
 	var(
@@ -85,20 +76,20 @@ func (m *dnsManager) AddSearchDomains(domains []string) error {
 	)
 
 	// save existing configuration
-	if err = m.networksetup.Run([]string{ "-getsearchdomains", netServiceName }); err != nil {
+	if err = networksetup.Run([]string{ "-getsearchdomains", netServiceName }); err != nil {
 		return err
 	}
-	origSearchDomains := m.nc.outputBuffer.String()
+	origSearchDomains := outputBuffer.String()
 	if origSearchDomains != fmt.Sprintf("There aren't any Search Domains set on %s.\n", netServiceName) {
 		m.nc.origSearchDomains = strings.Fields(origSearchDomains)
 	}
-	m.nc.outputBuffer.Reset()
+	outputBuffer.Reset()
 
 	args := []string{ "-setsearchdomains", netServiceName }
 	args = append(args, domains...)
 
 	// set search domains
-	if err = m.networksetup.Run(args); err != nil {
+	if err = networksetup.Run(args); err != nil {
 		return err
 	}
 	
@@ -112,26 +103,26 @@ func (m *dnsManager) Clear() {
 	)
 
 	// clear search domains
-	if err = m.networksetup.Run(
+	if err = networksetup.Run(
 		append(
 			[]string{ "-setdnsservers", netServiceName }, 
 			m.nc.origDNSServers...,
 		),
 	); err != nil {
-		logger.ErrorMessage("DNSManager.Clear(): Failed to reset dns servers: %s", m.nc.outputBuffer.String())
+		logger.ErrorMessage("DNSManager.Clear(): Failed to reset dns servers: %s", outputBuffer.String())
 	}
-	m.nc.outputBuffer.Reset()	
+	outputBuffer.Reset()	
 
 	// clear dns servers
-	if err = m.networksetup.Run(
+	if err = networksetup.Run(
 		append(
 			[]string{ "-setsearchdomains", netServiceName }, 
 			m.nc.origSearchDomains...,
 		),
 	); err != nil {
-		logger.ErrorMessage("DNSManager.Clear(): Failed to reset dns search domains: %s", m.nc.outputBuffer.String())
+		logger.ErrorMessage("DNSManager.Clear(): Failed to reset dns search domains: %s", outputBuffer.String())
 	}
-	m.nc.outputBuffer.Reset()	
+	outputBuffer.Reset()	
 
 	// reset saved dns server and search domains if any
 	m.nc.origDNSServers = []string{ "empty" }

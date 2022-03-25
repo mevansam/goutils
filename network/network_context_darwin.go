@@ -8,7 +8,11 @@ import (
 	"bytes"
 	"net"
 	"regexp"
-	"unicode"
+	"syscall"
+	"time"
+
+	netroute "golang.org/x/net/route"
+	"inet.af/netaddr"
 
 	"github.com/mevansam/goutils/logger"
 	"github.com/mevansam/goutils/run"
@@ -17,8 +21,6 @@ import (
 )
 
 type networkContext struct { 
-	outputBuffer bytes.Buffer
-
 	ipv6Disabled bool
 
 	origDNSServers    []string
@@ -28,19 +30,13 @@ type networkContext struct {
 }
 
 var (
-	defaultGatewayPattern = regexp.MustCompile(`^default\s+([0-9]+\.[0-9]+\.[0-9]+\.[0-9]+)\s+\S+\s+(\S+[0-9]+)\s*$`)
-
-	netstat,
+	ifconfig, 
+	route,
+	arp,
 	networksetup run.CLI
 
-	netServiceName,
-	defaultInterface,
-	defaultGateway string	
+	netServiceName string	
 )
-
-func init() {
-	readNetworkInfo()
-}
 
 func NewNetworkContext() NetworkContext {
 
@@ -52,100 +48,16 @@ func NewNetworkContext() NetworkContext {
 	}
 }
 
-func readNetworkInfo() {
-	if len(netServiceName) != 0 && 
-		len(defaultInterface) !=0 && 
-		len(defaultGateway) != 0 {
-		return
-	}
-
-	var (
-		err error
-		ok  bool
-
-		outputBuffer bytes.Buffer
-		result       [][]string
-
-		line string
-
-		ip []net.IP
-	)
-
-	home, _ := homedir.Dir()
-
-	if netstat, err = run.NewCLI("/usr/sbin/netstat", home, &outputBuffer, &outputBuffer); err != nil {
-		logger.ErrorMessage("networkContext.init(): Error creating CLI for /usr/sbin/netstat: %s", err.Error())
-		return
-	}
-	if networksetup, err = run.NewCLI("/usr/sbin/networksetup", home, &outputBuffer, &outputBuffer); err != nil {
-		logger.ErrorMessage("networkContext.init(): Error creating CLI for /usr/sbin/networksetup: %s", err.Error())
-		return
-	}
-
-	// retrieve current default route by querying the current route table
-	if err = netstat.Run([]string{ "-nrf", "inet" }); err != nil {
-		logger.ErrorMessage("networkContext.init(): Error running \"netstat -nrf inet\": %s", err.Error())
-		return
-	}
-
-	results := utils.ExtractMatches(outputBuffer.Bytes(), map[string]*regexp.Regexp{
-		"gateway": defaultGatewayPattern,
-	})
-	outputBuffer.Reset()
-
-	if result, ok = results["gateway"]; !ok {
-		logger.ErrorMessage("networkContext.init(): Unable to determine the default gateway")
-		return
-	}
-
-	defaultGateway = result[0][1]	
-	if !unicode.IsDigit(rune(defaultGateway[0])) {
-		if ip, err = net.LookupIP(defaultGateway); err != nil && len(ip) == 0 {
-			logger.ErrorMessage("networkContext.init(): Error looking up IP of gateway \"%s\": %s", defaultGateway, err.Error())
-			return
-		}
-		defaultGateway = ip[0].String()
-	}
-	defaultInterface = result[0][2]
-
-	// determine network service name for default device
-	if err = networksetup.Run([]string{ "-listallhardwareports" }); err != nil {
-		logger.ErrorMessage("networkContext.init(): Error running \"networksetup -listallhardwareports\": %s", err.Error())
-		return
-	}
-
-	matchDevice := "Device: " + defaultInterface
-	prevLine := ""
-	scanner := bufio.NewScanner(bytes.NewReader(outputBuffer.Bytes()))
-	for scanner.Scan() {
-		line = scanner.Text()
-		if line == matchDevice && len(prevLine) > 0 {
-			netServiceName = prevLine[15:]
-			break;
-		}
-		prevLine = line
-	}
-	outputBuffer.Reset()
-
-	if len(netServiceName) == 0 {
-		logger.ErrorMessage(
-			"networkContext.init(): Unable to determine default network service name for interface \"%s\"", 
-			defaultInterface,
-		)
-		return
-	}
-}
-
 func (c *networkContext) DefaultDeviceName() string {
 	return netServiceName
 }
 
 func (c *networkContext) DefaultInterface() string {
-	return defaultInterface
+	return Network.DefaultIPv4Gateway.Interface
 }
 
 func (c *networkContext) DefaultGateway() string {
-	return defaultGateway
+	return Network.DefaultIPv4Gateway.GatewayIP.String()
 }
 
 func (c *networkContext) DisableIPv6() error {
@@ -189,4 +101,225 @@ func (c *networkContext) Clear() {
 		)
 	}
 	routeManager.Clear()
+}
+
+func init() {
+
+	var (
+		err error
+	)
+
+	// initialize networking CLIs
+	home, _ := homedir.Dir()
+	if ifconfig, err = run.NewCLI("/sbin/ifconfig", home, nullOut, nullOut); err != nil {
+		logger.ErrorMessage("networkContext.init(): Error creating CLI for /sbin/ifconfig: %s", err.Error())
+		return
+	}
+	if route, err = run.NewCLI("/sbin/route", home, &outputBuffer, &outputBuffer); err != nil {
+		logger.ErrorMessage("networkContext.init(): Error creating CLI for /sbin/route: %s", err.Error())
+		return
+	}
+	if arp, err = run.NewCLI("/usr/sbin/arp", home, &outputBuffer, &outputBuffer); err != nil {
+		logger.ErrorMessage("networkContext.init(): Error creating CLI for /usr/sbin/arp: %s", err.Error())
+		return
+	}
+	if networksetup, err = run.NewCLI("/usr/sbin/networksetup", home, &outputBuffer, &outputBuffer); err != nil {
+		logger.ErrorMessage("networkContext.init(): Error creating CLI for /usr/sbin/networksetup: %s", err.Error())
+		return
+	}
+
+	readNetworkInfo()
+}
+
+func readNetworkInfo() {
+	if len(netServiceName) != 0 {
+		return
+	}
+
+	var (
+		err error
+
+		results map[string][][]string		
+		line    string
+	)
+
+	// read network routing details
+	readRouteTable()
+	if Network.DefaultIPv4Gateway == nil {
+		// enumerate all network service interfaces
+		if err = networksetup.Run([]string{ "-listnetworkserviceorder" }); err != nil {
+			logger.ErrorMessage("networkContext.init(): Error running \"networksetup -listnetworkserviceorder\": %s", err.Error())
+			return
+		}
+		results = utils.ExtractMatches(outputBuffer.Bytes(), map[string]*regexp.Regexp{
+			"ports": regexp.MustCompile(`^\(Hardware Port: .* Device: ([a-z]+[0-9]*)\)$`),
+		})
+		outputBuffer.Reset()
+
+		// restart each network interface
+		for _, p := range results["ports"] {
+			if len(p) == 2 {
+				if err = run.RunAsAdminWithArgs([]string{"ifconfig", p[1], "down"}, &outputBuffer, &outputBuffer); err == nil {
+					_ = run.RunAsAdminWithArgs([]string{"ifconfig", p[1], "up"}, &outputBuffer, &outputBuffer)
+				}
+			}
+		}
+		// allow network service to re-initialize route table
+		time.Sleep(5 * time.Second)
+
+		readRouteTable()
+		if Network.DefaultIPv4Gateway == nil {
+			logger.ErrorMessage("networkContext.init(): Unable to determine the default gateway. Please restart you systems network services.")
+			return
+		}
+	}
+
+	// determine network service name for default device
+	if err = arp.Run([]string{ "-a" }); err != nil {
+		logger.ErrorMessage("networkContext.init(): Error running \"arp -a\": %s", err.Error())
+		return
+	}
+	results = utils.ExtractMatches(outputBuffer.Bytes(), map[string]*regexp.Regexp{
+		"interfaces": regexp.MustCompile(`^(.*) \(([0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3})\) at ([0-9a-f]{1,2}:[0-9a-f]{1,2}:[0-9a-f]{1,2}:[0-9a-f]{1,2}:[0-9a-f]{1,2}:[0-9a-f]{1,2}) on ([a-z]+[0-9]+) ifscope \[ethernet\]$`),
+	})
+	outputBuffer.Reset()
+
+	lanGatewayItf := Network.DefaultIPv4Gateway.Interface
+	lanItfs := results["interfaces"]	
+	if len(lanItfs) > 0 && len(lanItfs[0]) == 5 {
+		lanGatewayItf = lanItfs[0][4]
+	}
+	
+	if err = networksetup.Run([]string{ "-listallhardwareports" }); err != nil {
+		logger.ErrorMessage("networkContext.init(): Error running \"networksetup -listallhardwareports\": %s", err.Error())
+		return
+	}
+	matchDevice := "Device: " + lanGatewayItf
+	prevLine := ""
+	scanner := bufio.NewScanner(bytes.NewReader(outputBuffer.Bytes()))
+	for scanner.Scan() {
+		line = scanner.Text()
+		if line == matchDevice && len(prevLine) > 0 {
+			netServiceName = prevLine[15:]
+			break;
+		}
+		prevLine = line
+	}
+	outputBuffer.Reset()
+
+	if len(netServiceName) == 0 {
+		logger.ErrorMessage(
+			"networkContext.init(): Unable to determine default network service name for interface \"%s\"", 
+			Network.DefaultIPv4Gateway.Interface,
+		)
+		return
+	}
+}
+
+func readRouteTable() {
+
+	var (
+		err error
+		ok  bool
+
+		rib     []byte
+		msgs    []netroute.Message
+		rm      *netroute.RouteMessage
+		iface   *net.Interface
+		netMask netaddr.IP
+	)
+
+	// retrieve network route information by querying the system's routing table
+	// ref syscall constants: https://github.com/apple/darwin-xnu/blob/main/bsd/net/route.h
+
+	if rib, err = netroute.FetchRIB(syscall.AF_UNSPEC, syscall.NET_RT_DUMP2, 0); err != nil {
+		logger.ErrorMessage("networkContext.init(): Error fetching system route table: %s", err.Error())
+		return
+	}
+	if msgs, err = netroute.ParseRIB(syscall.NET_RT_IFLIST2, rib); err != nil {
+		logger.ErrorMessage("networkContext.init(): Error parsing fetched route table data: %s", err.Error())
+		return
+	}
+
+	defaultIPv4Route := netaddr.MustParseIPPrefix("0.0.0.0/0")
+	defaultIPv6Route := netaddr.MustParseIPPrefix("::/0")
+
+	var getAddr = func(addr netroute.Addr) (netaddr.IP, bool, bool) {
+		if addr != nil {
+			switch addr.Family() {
+			case syscall.AF_INET:
+				return netaddr.IPFrom4(addr.(*netroute.Inet4Addr).IP), false, true
+			case syscall.AF_INET6:
+				return netaddr.IPFrom16(addr.(*netroute.Inet6Addr).IP), true, true
+			}	
+		}
+		return netaddr.IP{}, false, false
+	}
+
+	for _, m := range msgs {
+		if rm, ok = m.(*netroute.RouteMessage); !ok {
+			continue
+		}
+		if rm.Flags & syscall.RTF_UP == 0 || 
+			rm.Flags & syscall.RTF_GATEWAY == 0 || 
+			rm.Flags & syscall.RTF_WASCLONED != 0 || 
+			len(rm.Addrs) == 0 {
+			continue
+		}
+		if iface, err = net.InterfaceByIndex(rm.Index); err != nil {
+			logger.ErrorMessage(
+				"networkContext.init(): Error looking up interface for index %d: %s",
+				rm.Index,
+				err.Error(),
+			)
+			continue
+		}
+		r := &Route{
+			Interface: iface.Name,
+		}
+		if r.GatewayIP, r.IsIPv6, ok = getAddr(rm.Addrs[syscall.RTAX_GATEWAY]); !ok {
+			logger.ErrorMessage("networkContext.init(): Gateway address not present for route message: %# v", rm)
+			continue
+		}
+		if r.DestIP, _, ok = getAddr(rm.Addrs[syscall.RTAX_DST]); !ok {
+			logger.ErrorMessage("networkContext.init(): Destination address not present for route message: %# v", rm)
+			continue
+		}
+		if netMask, _, ok = getAddr(rm.Addrs[syscall.RTAX_NETMASK]); !ok {
+			logger.DebugMessage("networkContext.init(): Broadcast address not present for route message: %# v", rm)
+		}
+		ones, _ := net.IPMask(netMask.IPAddr().IP).Size()
+		r.DestCIDR = netaddr.IPPrefixFrom(r.DestIP, uint8(ones))
+		
+		r.IsInterfaceScoped = rm.Flags & syscall.RTF_IFSCOPE != 0
+		if r.IsIPv6 {
+			if r.DestCIDR == defaultIPv6Route {
+				if !r.IsInterfaceScoped {
+					if Network.DefaultIPv6Gateway == nil {
+						Network.DefaultIPv6Gateway = r
+					}	else {
+						logger.ErrorMessage("networkContext.init(): Duplicate default ip v6 route will be ignored: %# v", r)
+					}		
+				} else {
+					Network.ScopedDefaults = append(Network.ScopedDefaults, r)
+				}
+			} else {
+				Network.StaticRoutes = append(Network.StaticRoutes, r)
+			}
+		} else {
+			if r.DestCIDR == defaultIPv4Route {
+				if !r.IsInterfaceScoped {
+					if Network.DefaultIPv4Gateway == nil {
+						Network.DefaultIPv4Gateway = r
+					}	else {
+						logger.ErrorMessage("networkContext.init(): Duplicate default ip v4 route will be ignored: %# v", r)
+					}
+				} else {
+					Network.ScopedDefaults = append(Network.ScopedDefaults, r)
+				}
+			} else {
+				Network.StaticRoutes = append(Network.StaticRoutes, r)
+			}
+		}
+	}
 }

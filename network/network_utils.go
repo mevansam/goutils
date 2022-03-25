@@ -1,17 +1,17 @@
 package network
 
 import (
+	"bytes"
 	"net"
 	"os"
 	"regexp"
 	"strconv"
 
 	"github.com/mevansam/goutils/logger"
-	"github.com/mitchellh/go-homedir"
 )
 
 var (
-	home string
+	outputBuffer bytes.Buffer
 
 	nullOut *os.File
 )
@@ -22,10 +22,6 @@ func init() {
 		err error
 	)
 
-	if home, err = homedir.Dir(); err != nil {
-		logger.ErrorMessage("network.init(): Error determining home dir: %s", err.Error())
-		panic(err)
-	}
 	if nullOut, err = os.Open(os.DevNull); err != nil {
 		logger.ErrorMessage("network.init(): Error getting the null file output handle: %s", err.Error())
 		panic(err)
