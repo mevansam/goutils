@@ -1,6 +1,8 @@
 package utils_test
 
 import (
+	"regexp"
+
 	"github.com/mevansam/goutils/utils"
 
 	. "github.com/onsi/ginkgo"
@@ -85,6 +87,67 @@ var _ = Describe("string utils tests", func() {
            well as custom in-house solutions.`,
 				),
 			)
+		})
+	})
+
+	Context("matching lines in a buffer", func() {
+		
+		It("matches lines against a given search pattern", func() {
+
+			testInput := []byte(`Routing tables
+
+Internet:
+Destination        Gateway            Flags        Netif Expire
+default            10.20.110.16       UGScg        utun2       
+default            192.168.1.1        UGScIg         en0
+default            utun7              UGScIg         en0
+3.7.35/25          192.168.1.1        UGSc           en0       
+3.21.137.128/25    192.168.1.1        UGSc           en0       
+3.22.11/24         192.168.1.1        UGSc           en0       
+3.23.93/24         192.168.1.1        UGSc           en0       
+3.25.41.128/25     192.168.1.1        UGSc           en0       
+3.25.42/25         192.168.1.1        UGSc           en0       
+3.25.49/24         192.168.1.1        UGSc           en0       
+3.208.72/25        192.168.1.1        UGSc           en0       
+3.211.241/25       192.168.1.1        UGSc           en0       
+3.235.69/25        192.168.1.1        UGSc           en0       
+10.20.110.16/32    link#16            UCS          utun2       
+13.52.6.128/25     192.168.1.1        UGSc           en0       
+13.52.146/25       192.168.1.1        UGSc           en0       
+13.107.4.52        192.168.1.1        UGHS           en0       
+213.244.140        192.168.1.1        UGSc           en0       
+221.122.88.64/27   192.168.1.1        UGSc           en0       
+221.122.88.128/25  192.168.1.1        UGSc           en0       
+221.122.89.128/25  192.168.1.1        UGSc           en0       
+221.123.139.192/27 192.168.1.1        UGSc           en0       
+224.0.0/4          link#16            UmCS         utun2       
+224.0.0/4          link#6             UmCSI          en0      !
+224.0.0.251        link#16            UHmW3I       utun2     93
+239.255.255.250    1:0:5e:7f:ff:fa    UHmLWI         en0       
+239.255.255.250    link#16            UHmW3I       utun2     32
+255.255.255.255/32 link#16            UCS          utun2       
+255.255.255.255/32 link#6             UCSI           en0      !`)
+
+			results := utils.ExtractMatches(testInput, map[string]*regexp.Regexp{
+				"defaultGateways": regexp.MustCompile(`^default\s+([.0-9a-z]+)\s+\S+\s+(\S+[0-9]+)\s*$`),
+				"allGatewayRoutes": regexp.MustCompile(`^([0-9]+\.[0-9]+\.[0-9]+\.[0-9]+(/[0-9]+)?)\s+([0-9]+\.[0-9]+\.[0-9]+\.[0-9]+)\s+\S+\s+(\S+[0-9]+)\s*$`),
+			})
+
+			Expect(results["defaultGateways"]).To(Equal([][]string{
+				{"default            10.20.110.16       UGScg        utun2       ", "10.20.110.16", "utun2"},
+        {"default            192.168.1.1        UGScIg         en0", "192.168.1.1", "en0"},
+        {"default            utun7              UGScIg         en0", "utun7", "en0"},
+			}))
+			Expect(results["allGatewayRoutes"]).To(Equal([][]string{
+				{"3.21.137.128/25    192.168.1.1        UGSc           en0       ", "3.21.137.128/25", "/25", "192.168.1.1", "en0"},
+        {"3.25.41.128/25     192.168.1.1        UGSc           en0       ", "3.25.41.128/25", "/25", "192.168.1.1", "en0"},
+        {"13.52.6.128/25     192.168.1.1        UGSc           en0       ", "13.52.6.128/25", "/25", "192.168.1.1", "en0"},
+        {"13.107.4.52        192.168.1.1        UGHS           en0       ", "13.107.4.52", "", "192.168.1.1", "en0"},
+        {"221.122.88.64/27   192.168.1.1        UGSc           en0       ", "221.122.88.64/27", "/27", "192.168.1.1", "en0"},
+        {"221.122.88.128/25  192.168.1.1        UGSc           en0       ", "221.122.88.128/25", "/25", "192.168.1.1", "en0"},
+        {"221.122.89.128/25  192.168.1.1        UGSc           en0       ", "221.122.89.128/25", "/25", "192.168.1.1", "en0"},
+        {"221.123.139.192/27 192.168.1.1        UGSc           en0       ", "221.123.139.192/27", "/27", "192.168.1.1", "en0"},
+			}))
 		})
 	})
 })
