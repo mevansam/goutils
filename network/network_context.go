@@ -7,10 +7,13 @@ import (
 )
 
 type Route struct {
-	Interface string
+	InterfaceIndex int
+	InterfaceName  string
 
-	GatewayIP, DestIP netaddr.IP
-	DestCIDR          netaddr.IPPrefix
+	GatewayIP,
+	SrcIP,
+	DestIP   netaddr.IP
+	DestCIDR netaddr.IPPrefix
 	
 	IsIPv6            bool
 	IsInterfaceScoped bool
@@ -36,7 +39,7 @@ var Network = struct {
 
 func (r *Route) String() string {
 	return fmt.Sprintf(
-		"%s via %s on interface %s (scoped: %t)",
-		r.DestCIDR, r.GatewayIP, r.Interface, r.IsInterfaceScoped,
+		"%s via %s on interface %s (ip: %s, scoped: %t)",
+		r.DestCIDR, r.GatewayIP, r.InterfaceName, r.SrcIP, r.IsInterfaceScoped,
 	)
 }
