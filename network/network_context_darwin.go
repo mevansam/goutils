@@ -11,13 +11,13 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/mitchellh/go-homedir"
 	netroute "golang.org/x/net/route"
 	"inet.af/netaddr"
 
 	"github.com/mevansam/goutils/logger"
 	"github.com/mevansam/goutils/run"
 	"github.com/mevansam/goutils/utils"
-	"github.com/mitchellh/go-homedir"
 )
 
 type networkContext struct { 
@@ -53,7 +53,7 @@ func (c *networkContext) DefaultDeviceName() string {
 }
 
 func (c *networkContext) DefaultInterface() string {
-	return Network.DefaultIPv4Gateway.Interface
+	return Network.DefaultIPv4Gateway.InterfaceName
 }
 
 func (c *networkContext) DefaultGateway() string {
@@ -115,7 +115,7 @@ func init() {
 		logger.ErrorMessage("networkContext.init(): Error creating CLI for /sbin/ifconfig: %s", err.Error())
 		return
 	}
-	if route, err = run.NewCLI("/sbin/route", home, &outputBuffer, &outputBuffer); err != nil {
+	if route, err = run.NewCLI("/sbin/route", home, nullOut, nullOut); err != nil {
 		logger.ErrorMessage("networkContext.init(): Error creating CLI for /sbin/route: %s", err.Error())
 		return
 	}
@@ -184,7 +184,7 @@ func readNetworkInfo() {
 	})
 	outputBuffer.Reset()
 
-	lanGatewayItf := Network.DefaultIPv4Gateway.Interface
+	lanGatewayItf := Network.DefaultIPv4Gateway.InterfaceName
 	lanItfs := results["interfaces"]	
 	if len(lanItfs) > 0 && len(lanItfs[0]) == 5 {
 		lanGatewayItf = lanItfs[0][4]
@@ -210,7 +210,7 @@ func readNetworkInfo() {
 	if len(netServiceName) == 0 {
 		logger.ErrorMessage(
 			"networkContext.init(): Unable to determine default network service name for interface \"%s\"", 
-			Network.DefaultIPv4Gateway.Interface,
+			Network.DefaultIPv4Gateway.InterfaceName,
 		)
 		return
 	}
@@ -275,10 +275,15 @@ func readRouteTable() {
 			continue
 		}
 		r := &Route{
-			Interface: iface.Name,
+			InterfaceIndex: rm.Index,
+			InterfaceName:  iface.Name,
 		}
 		if r.GatewayIP, r.IsIPv6, ok = getAddr(rm.Addrs[syscall.RTAX_GATEWAY]); !ok {
 			logger.ErrorMessage("networkContext.init(): Gateway address not present for route message: %# v", rm)
+			continue
+		}
+		if r.SrcIP, _, ok = getAddr(rm.Addrs[syscall.RTAX_IFA]); !ok {
+			logger.ErrorMessage("networkContext.init(): Source address not present for route message: %# v", rm)
 			continue
 		}
 		if r.DestIP, _, ok = getAddr(rm.Addrs[syscall.RTAX_DST]); !ok {
