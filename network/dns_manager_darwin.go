@@ -35,29 +35,31 @@ func (m *dnsManager) AddDNSServers(servers []string) error {
 		err error
 	)
 
-	// save existing configuration
-	if err = networksetup.Run([]string{ "-getdnsservers", netServiceName }); err != nil {
-		return err
-	}
-	origDNSServers := outputBuffer.String()
-	if origDNSServers != fmt.Sprintf("There aren't any DNS Servers set on %s.\n", netServiceName) {
-		m.nc.origDNSServers = strings.Fields(origDNSServers)
-	}
-	outputBuffer.Reset()
-	
-	args := []string{ "-setdnsservers", netServiceName }
-	args = append(args, servers...)
+	if len(servers) > 0 {
+		// save existing configuration
+		if err = networksetup.Run([]string{ "-getdnsservers", netServiceName }); err != nil {
+			return err
+		}
+		origDNSServers := outputBuffer.String()
+		if origDNSServers != fmt.Sprintf("There aren't any DNS Servers set on %s.\n", netServiceName) {
+			m.nc.origDNSServers = strings.Fields(origDNSServers)
+		}
+		outputBuffer.Reset()
+		
+		args := []string{ "-setdnsservers", netServiceName }
+		args = append(args, servers...)
 
-	// set dns servers
-	if err = networksetup.Run(args); err != nil {
-		return err
-	}
-	// flush DNS cache
-	if err = run.RunAsAdminWithArgs([]string{ "/usr/bin/dscacheutil", "-flushcache" }, nullOut, nullOut); err != nil {
-		logger.ErrorMessage("Flushing DNS cache via \"dscacheutil\" failed: %s", err.Error())
-	}
-	if err = run.RunAsAdminWithArgs([]string{ "/usr/bin/killall", "-HUP", "mDNSResponder" }, nullOut, nullOut); err != nil {
-		logger.ErrorMessage("Killing \"mDNSResponder\" failed: %s", err.Error())
+		// set dns servers
+		if err = networksetup.Run(args); err != nil {
+			return err
+		}
+		// flush DNS cache
+		if err = run.RunAsAdminWithArgs([]string{ "/usr/bin/dscacheutil", "-flushcache" }, nullOut, nullOut); err != nil {
+			logger.ErrorMessage("Flushing DNS cache via \"dscacheutil\" failed: %s", err.Error())
+		}
+		if err = run.RunAsAdminWithArgs([]string{ "/usr/bin/killall", "-HUP", "mDNSResponder" }, nullOut, nullOut); err != nil {
+			logger.ErrorMessage("Killing \"mDNSResponder\" failed: %s", err.Error())
+		}
 	}
 
 	return nil
@@ -75,22 +77,24 @@ func (m *dnsManager) AddSearchDomains(domains []string) error {
 		err error
 	)
 
-	// save existing configuration
-	if err = networksetup.Run([]string{ "-getsearchdomains", netServiceName }); err != nil {
-		return err
-	}
-	origSearchDomains := outputBuffer.String()
-	if origSearchDomains != fmt.Sprintf("There aren't any Search Domains set on %s.\n", netServiceName) {
-		m.nc.origSearchDomains = strings.Fields(origSearchDomains)
-	}
-	outputBuffer.Reset()
+	if len(domains) > 0 {
+		// save existing configuration
+		if err = networksetup.Run([]string{ "-getsearchdomains", netServiceName }); err != nil {
+			return err
+		}
+		origSearchDomains := outputBuffer.String()
+		if origSearchDomains != fmt.Sprintf("There aren't any Search Domains set on %s.\n", netServiceName) {
+			m.nc.origSearchDomains = strings.Fields(origSearchDomains)
+		}
+		outputBuffer.Reset()
 
-	args := []string{ "-setsearchdomains", netServiceName }
-	args = append(args, domains...)
+		args := []string{ "-setsearchdomains", netServiceName }
+		args = append(args, domains...)
 
-	// set search domains
-	if err = networksetup.Run(args); err != nil {
-		return err
+		// set search domains
+		if err = networksetup.Run(args); err != nil {
+			return err
+		}
 	}
 	
 	return nil
