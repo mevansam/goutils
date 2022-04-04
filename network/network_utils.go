@@ -47,7 +47,7 @@ func GetNextAvailabeInterface(prefix string) (string, error) {
 	if ifaces, err = net.Interfaces(); err != nil {
 		return "", err
 	}
-	maxIndex = 0
+	maxIndex = -1
 	for _, i := range ifaces {
 
 		if matches = devNamePattern.FindAllStringSubmatch(i.Name, -1); matches != nil {
