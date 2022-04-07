@@ -4,6 +4,7 @@ go 1.17
 
 require (
 	github.com/gin-gonic/gin v1.7.7
+	github.com/godbus/dbus/v5 v5.1.0
 	github.com/kr/pretty v0.3.0
 	github.com/minio/highwayhash v1.0.2
 	github.com/mitchellh/go-homedir v1.1.0
@@ -11,6 +12,7 @@ require (
 	github.com/onsi/gomega v1.18.1
 	github.com/sirupsen/logrus v1.8.1
 	github.com/spf13/afero v1.8.1
+	github.com/vishvananda/netlink v1.1.0
 	github.com/youmark/pkcs8 v0.0.0-20201027041543-1326539a0a0a
 	golang.org/x/crypto v0.0.0-20220214200702-86341886e292
 	golang.org/x/net v0.0.0-20220225172249-27dd8689420f
@@ -35,6 +37,7 @@ require (
 	github.com/nxadm/tail v1.4.8 // indirect
 	github.com/rogpeppe/go-internal v1.8.1 // indirect
 	github.com/ugorji/go/codec v1.2.7 // indirect
+	github.com/vishvananda/netns v0.0.0-20191106174202-0a2b9b5464df // indirect
 	go4.org/intern v0.0.0-20220301175310-a089fc204883 // indirect
 	go4.org/unsafe/assume-no-moving-gc v0.0.0-20211027215541-db492cf91b37 // indirect
 	golang.org/x/text v0.3.7 // indirect

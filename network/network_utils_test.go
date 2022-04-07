@@ -1,6 +1,7 @@
 package network_test
 
 import (
+	"fmt"
 	"net"
 
 	"github.com/mevansam/goutils/network"
@@ -28,4 +29,22 @@ var _ = Describe("Wireguard Client", func() {
 		}
 		Expect(found).To(BeFalse())
 	})
-})
+
+// 	It("determine the configured default gateways", func() {
+
+// 		fmt.Println("\n\n**** ROUTE TABLE INFO ****")
+// 		fmt.Printf("\ndefault ipv4 gateway: %s\n", network.Network.DefaultIPv4Gateway)
+// 		fmt.Printf("default ipv6 gateway: %s\n",network. Network.DefaultIPv6Gateway)
+// 		fmt.Println("\nScoped Defaults:")
+// 		for _, d := range network.Network.ScopedDefaults {
+// 			fmt.Printf("  - %s\n", d)
+// 		}
+// 		fmt.Println("\nStatic Routes:")
+// 		for _, d := range network.Network.StaticRoutes {
+// 			fmt.Printf("  - %s\n", d)
+// 		}
+	
+// 		fmt.Println("****************************")
+// 		fmt.Println()	
+// 	})
+// })

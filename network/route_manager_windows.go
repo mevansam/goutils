@@ -3,6 +3,37 @@
 
 package network
 
+type routeManager struct {	
+	nc *networkContext
+}
+
+type routableInterface struct {
+	gatewayAddress string
+}
+
 func (c *networkContext) NewRouteManager() (RouteManager, error) {
-	return nil, nil
+
+	rm := &routeManager{
+		nc: c,
+	}
+	return rm, nil
+}
+
+func (m *routeManager) NewRoutableInterface(ifaceName, address string) (RoutableInterface, error) {
+	return &routableInterface{}, nil
+}
+
+func (m *routeManager) AddExternalRouteToIPs(ips []string) error {
+	return nil
+}
+
+func (m *routeManager) AddDefaultRoute(gateway string) error {
+	return nil
+}
+
+func (m *routeManager) Clear() {
+}
+
+func (i *routableInterface) MakeDefaultRoute() error {
+	return nil
 }
