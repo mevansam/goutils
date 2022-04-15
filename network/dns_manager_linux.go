@@ -7,7 +7,6 @@ import (
 	"context"
 	"strings"
 	"time"
-	// "fmt"
 
 	"github.com/godbus/dbus/v5"
 	"golang.org/x/sys/unix"
