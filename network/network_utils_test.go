@@ -1,7 +1,7 @@
 package network_test
 
 import (
-	"fmt"
+	// "fmt"
 	"net"
 
 	"github.com/mevansam/goutils/network"
@@ -47,4 +47,4 @@ var _ = Describe("Wireguard Client", func() {
 // 		fmt.Println("****************************")
 // 		fmt.Println()	
 // 	})
-// })
+})

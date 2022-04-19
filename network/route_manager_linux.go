@@ -13,9 +13,6 @@ import (
 
 type routeManager struct {	
 	nc *networkContext
-
-	// default interface is the one created last
-	newItf *routableInterface
 }
 
 type routableInterface struct {
@@ -29,6 +26,22 @@ func (c *networkContext) NewRouteManager() (RouteManager, error) {
 		nc: c,
 	}
 	return rm, nil
+}
+
+func (m *routeManager) GetRoutableInterface(ifaceName string) (RoutableInterface, error) {
+
+	var (
+		err error
+
+		ip    net.IP
+		ipNet *net.IPNet
+	)
+	itf := routableInterface{}
+
+	if itf.link, err = netlink.LinkByName(ifaceName); err != nil {
+		return nil, err
+	}
+	return &itf, nil
 }
 
 func (m *routeManager) NewRoutableInterface(ifaceName, address string) (RoutableInterface, error) {
@@ -168,4 +181,14 @@ func (i *routableInterface) MakeDefaultRoute() error {
 		LinkIndex: i.link.Attrs().Index,
 		Gw:        i.gatewayAddress,
 	})
+}
+
+func (i *routableInterface) AddStaticRouteFrom(srcItf, srcNetwork string) error {
+	// Route packets from src to network this itf is connected
+	return nil
+}
+
+func (i *routableInterface) FowardTrafficFrom(srcItf, srcNetwork string) error {
+	// NAT packets from src to network this itf is connected
+	return nil
 }

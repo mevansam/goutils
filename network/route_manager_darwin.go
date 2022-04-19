@@ -50,6 +50,10 @@ func (c *networkContext) NewRouteManager() (RouteManager, error) {
 	return rm, nil
 }
 
+func (m *routeManager) GetRoutableInterface(ifaceName string) (RoutableInterface, error) {
+	return nil, nil
+}
+
 func (m *routeManager) NewRoutableInterface(ifaceName, address string) (RoutableInterface, error) {
 
 	var (
@@ -156,5 +160,15 @@ func addDefaultRoute(gateway string) error {
 	if err = route.Run([]string{ "add", "default", gateway }); err != nil {
 		return err
 	}
+	return nil
+}
+
+func (i *routableInterface) AddStaticRouteFrom(srcItf, srcNetwork string) error {
+	// Route packets from src to network this itf is connected
+	return nil
+}
+
+func (i *routableInterface) FowardTrafficFrom(srcItf, srcNetwork string) error {
+	// NAT packets from src to network this itf is connected
 	return nil
 }

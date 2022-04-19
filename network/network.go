@@ -21,6 +21,7 @@ type DNSManager interface {
 }
 
 type RouteManager interface {
+	GetRoutableInterface(ifaceName string) (RoutableInterface, error)
 	NewRoutableInterface(ifaceName, tunAddress string) (RoutableInterface, error)
 	AddExternalRouteToIPs(ips []string) error
 	AddDefaultRoute(gateway string) error
@@ -30,4 +31,6 @@ type RouteManager interface {
 
 type RoutableInterface interface {
 	MakeDefaultRoute() error
+	AddStaticRouteFrom(srcItf, srcNetwork string) error
+	FowardTrafficFrom(srcItf, srcNetwork string) error
 }
