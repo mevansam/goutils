@@ -32,9 +32,6 @@ func (m *routeManager) GetRoutableInterface(ifaceName string) (RoutableInterface
 
 	var (
 		err error
-
-		ip    net.IP
-		ipNet *net.IPNet
 	)
 	itf := routableInterface{}
 
