@@ -117,7 +117,7 @@ var _ = Describe("timer utils tests", func() {
 			return currInterval, nil 
 		}
 
-		timer := utils.NewExecTimer(ctx, callback, false)
+		timer := utils.NewExecTimer(ctx, callback, true)
 		err = timer.Start(currInterval)
 		Expect(err).ToNot(HaveOccurred())
 

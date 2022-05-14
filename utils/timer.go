@@ -21,9 +21,12 @@ type ExecTimer struct {
 
 	callback     func() (time.Duration, error)
 	timeoutTimer *time.Ticker
+	tickTime      time.Duration
 	
 	stopOnError   bool
 	callbackError error
+
+	mx sync.Mutex
 }
 
 func NewExecTimer(
@@ -62,9 +65,37 @@ func (t *ExecTimer) invokeCallback() bool {
 		timeout time.Duration
 	)
 
+	// if an invocation is already in flight
+	// and is taking longer then the next tick
+	// then exit early so as not to queue up
+	// tick invocations.
+	if t.tickTime > 0 && !WaitTimeout(
+		&t.inflight, 
+		(t.tickTime * time.Millisecond) - time.Microsecond, // timeout just before next tick
+	) {
+		// callback is skipped as previous invocation of
+		// the callback appears to be taking longer than
+		// the timer tick
+		return false
+	}
 	// invocation is inflight
 	t.inflight.Add(1)
-	if timeout, err = t.callback(); err == nil && timeout == 0 {	
+	if timeout, err = t.callback(); err != nil {
+		t.callbackError = err
+
+		if t.stopOnError {
+			// terminate timer loop
+			t.setTimerTicker(0)
+			return true
+		}
+	}
+
+	var isNewTimeout = func() bool {
+		t.mx.Lock()
+		defer t.mx.Unlock()
+		return timeout == 0 || timeout == t.tickTime
+	}
+	if isNewTimeout() {	
 		// inflight is done as returning false 
 		// will not cancel the timer loop
 		t.inflight.Done()
@@ -72,34 +103,19 @@ func (t *ExecTimer) invokeCallback() bool {
 		// resume timer loop
 		return false
 	}
-	if t.timeoutTimer != nil {
-		t.timeoutTimer.Stop()
-		t.timeoutTimer = nil
-	}
-	if err != nil {
-		t.callbackError = err
 
-		// inflight is done as error
-		// should exit the timer loop 
-		t.inflight.Done()
-
-	} else {
-		go t.startTimer(timeout)
-	}
+	// start a new timer as timeout has changed
+	go t.startTimer(timeout)
 
 	// returns true to exit the timer loop as
-	// either a new timeout has been set or  
-	// callback returned an error
+	// either a new timeout has been set
 	return true
 }
 
 func (t *ExecTimer) startTimer(timeout time.Duration) {
 
 	// schedule next invocation
-	t.timeoutTimer = time.NewTicker(timeout * time.Millisecond)
-	// inflight invocation is done as
-	// next invocation has been scheduled
-	t.inflight.Done()
+	t.setTimerTicker(timeout)
 
 	// timer loop
 	for {
@@ -116,6 +132,28 @@ func (t *ExecTimer) startTimer(timeout time.Duration) {
 			}
 		}
 	}	
+}
+func (t *ExecTimer) setTimerTicker(timeout time.Duration) {
+
+	t.mx.Lock()
+	defer t.mx.Unlock()
+
+	// stops an existing timer ticker and 
+	// starts a new one with the new timeout
+
+	if t.timeoutTimer != nil {
+		t.timeoutTimer.Stop()
+		t.timeoutTimer = nil
+		t.tickTime = 0
+	}
+	if timeout > 0 {
+		t.tickTime = timeout
+		t.timeoutTimer = time.NewTicker(t.tickTime * time.Millisecond)
+	}
+
+	// inflight invocation is done as
+	// next invocation has been scheduled
+	t.inflight.Done()
 }
 
 func (t *ExecTimer) Stop() error {
