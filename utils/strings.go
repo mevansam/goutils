@@ -256,6 +256,37 @@ func ExtractMatches(buffer []byte, patterns map[string]*regexp.Regexp) map[strin
 	return results
 }
 
+// Return a formated full name
+func FormatFullName(first, middle, family string) string {
+	
+	var (
+		buffer strings.Builder
+	)
+
+	l := len(first)
+	if l == 1 {
+		buffer.WriteByte(first[0])
+		buffer.WriteByte('.')
+	} else if l > 1 {
+		buffer.WriteString(first)
+	}
+	l = len(middle)
+	if l > 0 {
+		buffer.WriteByte(' ')
+		if l == 1 {
+			buffer.WriteByte(middle[0])
+			buffer.WriteByte('.')	
+		} else {
+			buffer.WriteString(middle)
+		}
+	}
+	if len(family) > 0 {
+		buffer.WriteByte(' ')
+		buffer.WriteString(family)
+	}
+	return buffer.String()
+}
+
 /*
 	Convert byte size to bytes, kilobytes, megabytes, gigabytes, ...
 
