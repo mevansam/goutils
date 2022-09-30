@@ -145,7 +145,6 @@ func getValueAtPath(keyPath []string, valueMap interface{}) (interface{}, error)
 		v   interface{}
 	)
 
-
 	if m, ok = valueMap.(map[string]interface{}); !ok {
 		if a, ok = valueMap.([]interface{}); !ok {
 			return nil, fmt.Errorf("given value map object is not of type map[string]interface{} or []interface{}")
