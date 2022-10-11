@@ -408,10 +408,12 @@ func HandleAuthHeaders(mockAuthCrypt rest.AuthCrypt, request, response string, v
 				}
 				if testEquality {
 					Expect(expectedRequest).NotTo(BeNil())
+					logger.DebugMessage("MockServer: expected request Body: %# v", expectedRequest)
 					Expect(reflect.DeepEqual(expectedRequest, actualRequest)).To(BeTrue())	
 				}
 			} else {
 				Expect(expectedRequest).NotTo(BeNil())
+				logger.DebugMessage("MockServer: expected request Body: %# v", expectedRequest)
 				Expect(reflect.DeepEqual(expectedRequest, actualRequest)).To(BeTrue())
 			}
 		} else {
