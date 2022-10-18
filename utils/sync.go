@@ -1,7 +1,6 @@
 package utils
 
 import (
-	"fmt"
 	"sync"
 	"time"
 )
@@ -34,7 +33,31 @@ func WaitTimeout(wg *sync.WaitGroup, timeout time.Duration) bool {
 	case <-c:
 		return true // completed normally
 	case <-time.After(timeout):
-		fmt.Println("==> timedout")
 		return false // timed out
+	}
+}
+
+// Invoke the given function and waits for it to complete 
+// within the specified timeout. Returns false if function
+// call times out. If timeout is 0 then call will wait
+// indefinitely until function call completes.
+func InvokeWithTimeout(fn func(), timeout time.Duration) bool {
+
+	if timeout == 0 {
+		fn()
+		return true
+
+	} else {
+		c := make(chan struct{})
+		go func() {
+			defer close(c)
+			fn()
+		}()
+		select {
+		case <-c:
+			return true // completed normally
+		case <-time.After(timeout):
+			return false // timed out
+		}	
 	}
 }

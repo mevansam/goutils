@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"time"
 
 	"github.com/mevansam/goutils/run"
 	"github.com/mevansam/goutils/streams"
@@ -14,7 +15,7 @@ import (
 	. "github.com/onsi/gomega"
 )
 
-var _ = Describe("CLI", func() {
+var _ = FDescribe("CLI", func() {
 
 	var (
 		err error
@@ -212,4 +213,54 @@ var _ = Describe("CLI", func() {
 			Expect(pipedOutputString.String()).To(BeEquivalentTo("aaaa\nbbbb\ndddd\n - written to stdout\n"))
 		})
 	})
+
+	Context("run shell cli command async and test timeout", func() {
+
+		var (
+			timedOutput string
+		)
+
+		BeforeEach(func() {
+			timedOutput, err = filepath.Abs(workingDirectory + "/../test/fixtures/cli/timed-output.sh")
+			Expect(err).NotTo(HaveOccurred())
+		})
+
+		It("runs CLI script for 5 seconds and validates it ended as expected", func() {
+			cli, err = run.NewCLI(timedOutput, workingDirectory, &outputBuffer, &errorBuffer)
+			Expect(err).NotTo(HaveOccurred())
+
+			err = cli.Start([]string{"5"})
+			Expect(err).NotTo(HaveOccurred())
+			err = cli.Wait()
+			Expect(outputBuffer.String()).To(Equal(outputRunFor5Secs))
+		})
+
+		It("runs CLI script and stops it after 2 seconds", func() {
+			cli, err = run.NewCLI(timedOutput, workingDirectory, &outputBuffer, &errorBuffer)
+			Expect(err).NotTo(HaveOccurred())
+
+			err = cli.Start([]string{"60"})
+			Expect(err).NotTo(HaveOccurred())
+			time.Sleep(3 * time.Second)
+			err = cli.Stop()
+			Expect(outputBuffer.String()).To(MatchRegexp(".*running for 2 secs\ninterrupted"))
+		})
+		
+		It("runs CLI script with interrupts disabled for 3s and waits 2s for it to terminate", func() {
+			cli, err = run.NewCLI(timedOutput, workingDirectory, &outputBuffer, &errorBuffer)
+			Expect(err).NotTo(HaveOccurred())
+
+			err = cli.Start([]string{"60", "X"})
+			Expect(err).NotTo(HaveOccurred())
+			err = cli.Wait(3 * time.Second, 2 * time.Second)
+			Expect(outputBuffer.String()).To(MatchRegexp(".*running for 2 secs\ncannot interrupt\nrunning for 3 secs\nrunning for 4 secs"))
+		})
+	})
 })
+
+const outputRunFor5Secs = `running for 1 secs
+running for 2 secs
+running for 3 secs
+running for 4 secs
+running for 5 secs
+`

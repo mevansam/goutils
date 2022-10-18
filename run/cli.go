@@ -7,9 +7,11 @@ import (
 	"os/exec"
 	"runtime"
 	"strings"
+	"time"
 
 	"github.com/mevansam/goutils/logger"
 	"github.com/mevansam/goutils/streams"
+	"github.com/mevansam/goutils/utils"
 )
 
 type CLI interface {
@@ -22,6 +24,12 @@ type CLI interface {
 
 	Run(args []string) error
 	RunWithEnv(args []string, extraEnvVars []string) error
+
+	Start(args []string) error
+	StartWithEnv(args []string, extraEnvVars []string) error
+
+	Wait(timeout... time.Duration) error
+	Stop(timeout... time.Duration) error
 }
 
 type cli struct {
@@ -37,6 +45,9 @@ type cli struct {
 	outFilteredWriter   io.WriteCloser
 	outUnfilteredBuffer io.Writer
 	filteredAll         bool
+
+	// running process
+	command *exec.Cmd
 }
 
 func NewCLI(
@@ -50,7 +61,7 @@ func NewCLI(
 		info os.FileInfo
 	)
 
-	logger.TraceMessage("Creating CLI to execute binary '%s' from path '%s'.",
+	logger.TraceMessage("cli.NewCLI(): Creating CLI to execute binary '%s' from path '%s'.",
 		executablePath,
 		workingDirectory,
 	)
@@ -154,20 +165,124 @@ func (c *cli) RunWithEnv(
 	extraEnvVars []string,
 ) error {
 
-	command := exec.Command(c.executablePath, args...)
-	command.Dir = c.workingDirectory
+	var (
+		err error
+	)
+	if err = c.StartWithEnv(args, extraEnvVars); err != nil {
+		return err
+	}
+	return c.Wait(0)
+}
 
-	command.Env = os.Environ()
-	command.Env = append(command.Env, extraEnvVars...)
+func (c *cli) Start(
+	args []string,
+) error {
+	return c.StartWithEnv(args, []string{})
+}
 
-	command.Stdout = c.outputBuffer
-	command.Stderr = c.errorBuffer
+func (c *cli) StartWithEnv(
+	args []string,
+	extraEnvVars []string,
+) error {
 
-	logger.TraceMessage("CLI command environment: %# v", command.Env)
-	logger.TraceMessage("CLI command working dir: %s", c.workingDirectory)
-	logger.TraceMessage("Running CLI command: %s %s", c.executablePath, strings.Join(args, " "))
+	c.command = exec.Command(c.executablePath, args...)
+	c.command.Dir = c.workingDirectory
 
-	err := command.Run()
+	c.command.Env = os.Environ()
+	c.command.Env = append(c.command.Env, extraEnvVars...)
+
+	c.command.Stdout = c.outputBuffer
+	c.command.Stderr = c.errorBuffer
+
+	logger.TraceMessage("cli.Start(): CLI command environment: %# v", c.command.Env)
+	logger.TraceMessage("cli.Start(): CLI command working dir: %s", c.workingDirectory)
+	logger.TraceMessage("cli.Start(): Starting CLI command: %s %s", c.executablePath, strings.Join(args, " "))
+
+	return c.command.Start()
+}
+
+func (c *cli) Wait(timeout... time.Duration) error {
+
+	var (
+		err error
+
+		runTimeout, stopTimeout time.Duration
+	)
+
+	if c.command != nil {
+
+		if len(timeout) > 0 {
+			runTimeout = timeout[0]
+		} else {
+			runTimeout = 0
+		}
+		if len(timeout) > 1 {
+			stopTimeout = timeout[1]
+		} else {
+			stopTimeout = 100 * time.Millisecond
+		}
+	
+		logger.TraceMessage("cli.Wait(): Waiting for CLI command to finish: %s", c.executablePath)	
+		if utils.InvokeWithTimeout(
+			func() {
+				err = c.command.Wait()
+			},
+			runTimeout,
+		) {
+			c.cleanUp()
+		} else {
+			logger.TraceMessage("cli.Wait(): CLI command timedout after %d seconds: %s", runTimeout / time.Second, c.executablePath)
+			err = c.Stop(stopTimeout)
+		}
+	}
+	return err
+}
+
+func (c *cli) Stop(timeout... time.Duration) error {
+
+	var (
+		err error
+
+		stopTimeout time.Duration
+	)
+
+	if c.command != nil {
+
+		if len(timeout) > 0 {
+			stopTimeout = timeout[0]
+		} else {
+			stopTimeout = 0
+		}
+
+		logger.TraceMessage("cli.Stop(): Signalling CLI command to stop: %s", c.executablePath)	
+		if err = c.command.Process.Signal(os.Interrupt); err != nil {
+			return err
+		}
+
+		if !utils.InvokeWithTimeout(
+			func() {				
+				_, err = c.command.Process.Wait()
+			},
+			stopTimeout,
+		) {
+			logger.TraceMessage("cli.Stop(): CLI command did not stop after %d seconds. Process will be killed: %s", stopTimeout / time.Second, c.executablePath)
+			err = c.command.Process.Kill()
+
+			if !utils.InvokeWithTimeout(
+				func() {				
+					_, err = c.command.Process.Wait()
+				},
+				100 * time.Millisecond,
+			) {
+				logger.TraceMessage("cli.Stop(): CLI command could not be killed: %s", c.executablePath)
+			}
+		}
+		c.cleanUp()
+	}
+	return err
+}
+
+func (c *cli) cleanUp() {
 
 	// Restore buffers if piped
 	if c.outBuffer != nil {
@@ -210,6 +325,5 @@ func (c *cli) RunWithEnv(
 	c.outFilteredWriter = nil
 	c.outUnfilteredBuffer = nil
 	c.filteredAll = false
-
-	return err
+	c.command = nil
 }
