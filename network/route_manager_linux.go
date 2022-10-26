@@ -90,7 +90,7 @@ func (m *routeManager) AddExternalRouteToIPs(ips []string) error {
 
 		destIP net.IP
 	)
-	gatewayIP := Network.DefaultIPv4Gateway.GatewayIP.IPAddr().IP
+	gatewayIP := Network.DefaultIPv4Gateway.GatewayIP.AsSlice()
 
 	for _, ip := range ips {
 		if destIP = net.ParseIP(ip); destIP != nil {
@@ -150,7 +150,7 @@ func (m *routeManager) Clear() {
 	if err = netlink.RouteAdd(&netlink.Route{
 		Scope:     netlink.SCOPE_UNIVERSE,
 		LinkIndex: Network.DefaultIPv4Gateway.InterfaceIndex,
-		Gw:        Network.DefaultIPv4Gateway.GatewayIP.IPAddr().IP,
+		Gw:        Network.DefaultIPv4Gateway.GatewayIP.AsSlice(),
 	}); err != nil {
 		logger.ErrorMessage(
 			"routeManager.Clear(): Unable to restore default route: %s", 
@@ -167,7 +167,7 @@ func (i *routableInterface) MakeDefaultRoute() error {
 	if err = netlink.RouteDel(&netlink.Route{
 		Scope:     netlink.SCOPE_UNIVERSE,
 		LinkIndex: Network.DefaultIPv4Gateway.InterfaceIndex,
-		Gw:        Network.DefaultIPv4Gateway.GatewayIP.IPAddr().IP,
+		Gw:        Network.DefaultIPv4Gateway.GatewayIP.AsSlice(),
 	}); err != nil {
 		return err
 	}

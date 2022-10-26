@@ -6,6 +6,7 @@ import (
 	"log"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/mevansam/goutils/streams"
 	. "github.com/onsi/gomega"
@@ -172,6 +173,22 @@ func (c *FakeCLI) RunWithEnv(
 	}
 
 	return fmt.Errorf("Fake response not found for key '%s'", requestKey)
+}
+
+func (c *FakeCLI) Start(args []string) error {
+	return c.Run(args)
+}
+
+func (c *FakeCLI) StartWithEnv(args []string, extraEnvVars []string) error {
+	return c.RunWithEnv(args, extraEnvVars)
+}
+
+func (c *FakeCLI) Wait(timeout... time.Duration) error {
+	return nil
+}
+
+func (c *FakeCLI) Stop(timeout... time.Duration) error {
+	return nil
 }
 
 func createRequestKey(args []string, env []string) string {

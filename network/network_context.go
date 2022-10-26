@@ -2,8 +2,7 @@ package network
 
 import (
 	"fmt"
-
-	"inet.af/netaddr"
+	"net/netip"
 )
 
 type Route struct {
@@ -12,8 +11,8 @@ type Route struct {
 
 	GatewayIP,
 	SrcIP,
-	DestIP   netaddr.IP
-	DestCIDR netaddr.IPPrefix
+	DestIP   netip.Addr
+	DestCIDR netip.Prefix
 	
 	IsIPv6            bool
 	IsInterfaceScoped bool

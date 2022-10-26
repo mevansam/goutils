@@ -5,12 +5,12 @@ package network
 
 import (
 	"context"
+	"net/netip"
 	"strings"
 	"time"
 
 	"github.com/godbus/dbus/v5"
 	"golang.org/x/sys/unix"
-	"inet.af/netaddr"
 
 	"github.com/mevansam/goutils/logger"
 )
@@ -78,7 +78,7 @@ func (m *dnsManager) AddDNSServers(servers []string) error {
 	var (
 		err error
 
-		ip netaddr.IP
+		ip netip.Addr
 	)
 
 	if len(m.nc.routedItfs) > 0 {
@@ -87,7 +87,7 @@ func (m *dnsManager) AddDNSServers(servers []string) error {
 		
 		var linkNameservers = make([]resolvedLinkNameserver, len(servers))
 		for i, server := range servers {
-			if ip, err = netaddr.ParseIP(server); err != nil {
+			if ip, err = netip.ParseAddr(server); err != nil {
 				logger.ErrorMessage(
 					"dnsManager.AddDNSServers(): Error parsing DNS server '%s': %s", 
 					server, err.Error(),

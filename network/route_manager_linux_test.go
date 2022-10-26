@@ -73,7 +73,7 @@ var _ = Describe("Route Manager", func() {
 			var matchRoutes = func(line string) {
 				matched, _ := regexp.MatchString(`^default via 192\.168\.111\.1 dev wg99 $`, line)
 				if matched { counter++; return }
-				matched, _ = regexp.MatchString(`^34.204.21.102 via [0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3} dev en[a-z0-9]+ $`, line)
+				matched, _ = regexp.MatchString(`^34.204.21.102 via [0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3} dev e[a-z0-9]+ $`, line)
 				if matched { counter++; return }
 				matched, _ = regexp.MatchString(`^192.168.111.0/24 dev wg99 .* link src 192.168.111.2 $`, line)
 				if matched { counter++; return }
@@ -86,7 +86,7 @@ var _ = Describe("Route Manager", func() {
 			}
 			Expect(counter).To(Equal(3))
 		})
-	}}
+	})
 
 	Context("creates routes on an exisiting interface", func() {
 

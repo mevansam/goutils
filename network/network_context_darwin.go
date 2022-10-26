@@ -7,13 +7,13 @@ import (
 	"bufio"
 	"bytes"
 	"net"
+	"net/netip"
 	"regexp"
 	"syscall"
 	"time"
 
 	"github.com/mitchellh/go-homedir"
 	netroute "golang.org/x/net/route"
-	"inet.af/netaddr"
 
 	"github.com/mevansam/goutils/logger"
 	"github.com/mevansam/goutils/run"
@@ -226,7 +226,7 @@ func readRouteTable() {
 		msgs    []netroute.Message
 		rm      *netroute.RouteMessage
 		iface   *net.Interface
-		netMask netaddr.IP
+		netMask netip.Addr
 	)
 
 	// retrieve network route information by querying the system's routing table
@@ -241,19 +241,19 @@ func readRouteTable() {
 		return
 	}
 
-	defaultIPv4Route := netaddr.MustParseIPPrefix("0.0.0.0/0")
-	defaultIPv6Route := netaddr.MustParseIPPrefix("::/0")
+	defaultIPv4Route := netip.MustParsePrefix("0.0.0.0/0")
+	defaultIPv6Route := netip.MustParsePrefix("::/0")
 
-	var getAddr = func(addr netroute.Addr) (netaddr.IP, bool, bool) {
+	var getAddr = func(addr netroute.Addr) (netip.Addr, bool, bool) {
 		if addr != nil {
 			switch addr.Family() {
 			case syscall.AF_INET:
-				return netaddr.IPFrom4(addr.(*netroute.Inet4Addr).IP), false, true
+				return netip.AddrFrom4(addr.(*netroute.Inet4Addr).IP), false, true
 			case syscall.AF_INET6:
-				return netaddr.IPFrom16(addr.(*netroute.Inet6Addr).IP), true, true
+				return netip.AddrFrom16(addr.(*netroute.Inet6Addr).IP), true, true
 			}	
 		}
-		return netaddr.IP{}, false, false
+		return netip.Addr{}, false, false
 	}
 
 	for _, m := range msgs {
@@ -293,8 +293,8 @@ func readRouteTable() {
 		if netMask, _, ok = getAddr(rm.Addrs[syscall.RTAX_NETMASK]); !ok {
 			logger.DebugMessage("networkContext.init(): Broadcast address not present for route message: %# v", rm)
 		}
-		ones, _ := net.IPMask(netMask.IPAddr().IP).Size()
-		r.DestCIDR = netaddr.IPPrefixFrom(r.DestIP, uint8(ones))
+		ones, _ := net.IPMask(netMask.AsSlice()).Size()
+		r.DestCIDR = netip.PrefixFrom(r.DestIP, ones)
 		
 		r.IsInterfaceScoped = rm.Flags & syscall.RTF_IFSCOPE != 0
 		if r.IsIPv6 {
