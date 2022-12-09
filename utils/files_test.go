@@ -5,6 +5,9 @@ import (
 	"io/ioutil"
 	"math/rand"
 	"os"
+	"path"
+	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"time"
@@ -33,11 +36,11 @@ var _ = Describe("file utils tests", func() {
 			rand.Seed(time.Now().UTC().UnixNano())
 
 			tmpfile1, err = ioutil.TempFile("", "chunkreadtest")
-			defer tmpfile1.Close()
+			defer func() { _ = tmpfile1.Close() }()
 			Expect(err).ToNot(HaveOccurred())
 
 			tmpfile2, err = ioutil.TempFile("", "chunkwritetest")
-			defer tmpfile2.Close()
+			defer func() { _ = tmpfile2.Close() }()
 			Expect(err).ToNot(HaveOccurred())
 
 			content = utils.RandomString(fileSize)
@@ -221,6 +224,22 @@ var _ = Describe("file utils tests", func() {
 			_, err = io.Copy(&fileData, file)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(fileData.String()).To(Equal(content))
+		})
+	})
+
+	Context("directory compare", func() {
+
+		It("compares ", func() {
+			_, filename, _, _ := runtime.Caller(0)
+			dirPath := filepath.Dir(path.Dir(filename))
+
+			dirMatch, err := utils.DirCompare(dirPath, dirPath)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(dirMatch).To(BeTrue())
+
+			dirMatch, err = utils.DirCompare(dirPath, path.Dir(filename))
+			Expect(err).ToNot(HaveOccurred())
+			Expect(dirMatch).To(BeFalse())
 		})
 	})
 })
