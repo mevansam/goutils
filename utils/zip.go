@@ -13,10 +13,14 @@ import (
 // Unzip will decompress a zipped content, moving all files and folders
 // within the zip content (parameter 1) to an output directory (parameter 2).
 func Unzip(zippedData []byte, dest string) ([]string, error) {
+	return UnzipStream(bytes.NewReader(zippedData), int64(len(zippedData)), dest)
+}
+
+func UnzipStream(reader io.ReaderAt, size int64, dest string) ([]string, error) {
 
 	var filenames []string
 
-	r, err := zip.NewReader(bytes.NewReader(zippedData), int64(len(zippedData)))
+	r, err := zip.NewReader(reader, size)
 	if err != nil {
 		return filenames, err
 	}
