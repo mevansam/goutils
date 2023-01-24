@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"net"
 	"net/http"
 	"strings"
@@ -29,6 +28,7 @@ type Request struct {
 	Path       string
 	Headers    NV
 	QueryArgs  NV
+	RawQuery   string
 	Body       interface{}
 
 	client *RestApiClient
@@ -211,10 +211,12 @@ func (r *Request) do(method string, response *Response) (err error) {
 			query.Add(n, v)
 		}
 		httpRequest.URL.RawQuery = query.Encode()	
+	} else if len(r.RawQuery) > 0 {
+		httpRequest.URL.RawQuery = r.RawQuery
 	}
 	if logrus.IsLevelEnabled(logrus.TraceLevel) {
 		logger.TraceMessage(
-			"RestApiClient.Request.do(%s): sending request:\n  url=%s,\n  headers=%# v,\n  body=%s",
+			"RestApiClient.Request.do(%s): sending request:\n  url=%s\n  headers=%# v\n  body=%s",
 			method,
 			httpRequest.URL.String(),
 			httpRequest.Header,
@@ -243,7 +245,7 @@ func (r *Request) do(method string, response *Response) (err error) {
 		if buffer || logrus.IsLevelEnabled(logrus.TraceLevel) {
 			// retrieve response body to output to trace log
 			// before unmarshalling to the response body value
-			if body, err = ioutil.ReadAll(r); err != nil {
+			if body, err = io.ReadAll(r); err != nil {
 				return err
 			}
 			return json.NewDecoder(bytes.NewReader(body)).Decode(v)
@@ -293,7 +295,7 @@ func (r *Request) do(method string, response *Response) (err error) {
 
 	if logrus.IsLevelEnabled(logrus.TraceLevel) {
 		logger.TraceMessage(
-			"RestApiClient.Request.do(%s): received response:\n  url=%s,\n  status code=%d,\n  status=%s\n  headers=%# v,\n  body=%s",
+			"RestApiClient.Request.do(%s): received response:\n  url=%s\n  status code=%d\n  status=%s\n  headers=%# v\n  body=%s",
 			method,
 			httpRequest.URL.String(),
 			httpResponse.StatusCode,
