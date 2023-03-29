@@ -321,7 +321,7 @@ func (i *routableInterface) FowardTrafficFrom(srcItf RoutableInterface, srcNetwo
 	var (
 		err error
 
-		srcNetworkPrefix netip.Prefix
+		srcNetworkPrefix  netip.Prefix
 		destNetworkPrefix netip.Prefix
 
 		table                *nftables.Table
