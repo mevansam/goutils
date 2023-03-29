@@ -324,7 +324,7 @@ func (i *routableInterface) FowardTrafficFrom(srcItf RoutableInterface, srcNetwo
 		srcNetworkPrefix netip.Prefix
 		destNetworkPrefix netip.Prefix
 
-		table                 *nftables.Table
+		table                *nftables.Table
 		forward, nat         *nftables.Chain
 		forwardRule, natRule *nftables.Rule
 	)
