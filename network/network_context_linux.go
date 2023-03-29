@@ -17,6 +17,7 @@ type networkContext struct {
 }
 
 func NewNetworkContext() NetworkContext {
+	readNetworkInfo()	
 	return &networkContext{}
 }
 
@@ -63,12 +64,19 @@ func (c *networkContext) Clear() {
 }
 
 func init() {
+	readNetworkInfo()
+}
+
+func readNetworkInfo() {
 
 	var (
 		err error
 
 		routes []netlink.Route
 	)
+
+	Network.ScopedDefaults = nil
+	Network.StaticRoutes = nil
 
 	if routes, err = netlink.RouteList(nil, netlink.FAMILY_V4); err != nil {
 		logger.ErrorMessage("networkContext.init(): Error looking up ipv4 routes: %s", err.Error())
@@ -103,7 +111,7 @@ func readRoutes(
 		iface  *net.Interface
 	)
 
-	for _, route := range routes {		
+	for _, route := range routes {
 		if iface, err = net.InterfaceByIndex(route.LinkIndex); err != nil {
 			logger.ErrorMessage(
 				"networkContext.readRoutes(): Error looking up interface for index %d: %s",
@@ -122,8 +130,6 @@ func readRoutes(
 				logger.ErrorMessage("networkContext.readRoutes(): Error invalid gateway IP: %s", err.Error())
 				continue
 			}
-		} else {
-			continue
 		}
 		if route.Src != nil {
 			if r.SrcIP, ok = netip.AddrFromSlice(route.Src); !ok {

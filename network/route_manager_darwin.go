@@ -39,6 +39,7 @@ type routeManager struct {
 }
 
 type routableInterface struct {
+	ifaceName,
 	gatewayAddress string
 }
 
@@ -50,8 +51,25 @@ func (c *networkContext) NewRouteManager() (RouteManager, error) {
 	return rm, nil
 }
 
+func (m *routeManager) GetDefaultInterface() (RoutableInterface, error) {
+	return &routableInterface{
+		ifaceName:      Network.DefaultIPv4Gateway.InterfaceName,
+		gatewayAddress: Network.DefaultIPv4Gateway.GatewayIP.String(),
+	}, nil
+}
+
 func (m *routeManager) GetRoutableInterface(ifaceName string) (RoutableInterface, error) {
-	return nil, nil
+	for _, r := range Network.StaticRoutes {
+		if r.InterfaceName == ifaceName {
+			return &routableInterface{
+				ifaceName:      r.InterfaceName,
+				gatewayAddress: r.GatewayIP.String(),
+			}, nil
+		}
+	}
+	return &routableInterface{
+		ifaceName: ifaceName,
+	}, nil
 }
 
 func (m *routeManager) NewRoutableInterface(ifaceName, address string) (RoutableInterface, error) {
@@ -143,6 +161,14 @@ func (m *routeManager) Clear() {
 	}
 }
 
+func (i *routableInterface) Address4() (string, string, error) {
+	return "", "", nil
+}
+
+func (i *routableInterface) Address6() (string, string, error) {
+	return "", "", nil
+}
+
 func (i *routableInterface) MakeDefaultRoute() error {
 	return addDefaultRoute(i.gatewayAddress)
 }
@@ -163,12 +189,9 @@ func addDefaultRoute(gateway string) error {
 	return nil
 }
 
-func (i *routableInterface) AddStaticRouteFrom(srcItf, srcNetwork string) error {
-	// Route packets from src to network this itf is connected
-	return nil
-}
-
-func (i *routableInterface) FowardTrafficFrom(srcItf, srcNetwork string) error {
+func (i *routableInterface) FowardTrafficFrom(srcItf RoutableInterface, srcNetwork, destNetworks string, nat bool) error {
 	// NAT packets from src to network this itf is connected
+	// https://gist.github.com/ozel/93c48ff291b83ac648278f0562167b7e
+	// https://apple.stackexchange.com/questions/363099/how-to-forward-traffic-from-one-machine-to-another-with-pfctl
 	return nil
 }

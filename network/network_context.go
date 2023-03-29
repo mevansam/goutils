@@ -36,9 +36,23 @@ var Network = struct {
 	StaticRoutes []*Route
 }{}
 
+const (
+	WORLD4 = "0.0.0.0/0"
+	WORLD6 = "::/0"
+	LAN4   = "4"
+	LAN6   = "6"
+)
+
 func (r *Route) String() string {
-	return fmt.Sprintf(
-		"%s via %s on interface %s (ip: %s, scoped: %t)",
-		r.DestCIDR, r.GatewayIP, r.InterfaceName, r.SrcIP, r.IsInterfaceScoped,
-	)
+	if r.GatewayIP.IsValid() {
+		return fmt.Sprintf(
+			"%s via %s on interface %s (ip: %s, scoped: %t)",
+			r.DestCIDR, r.GatewayIP, r.InterfaceName, r.SrcIP, r.IsInterfaceScoped,
+		)	
+	} else {
+		return fmt.Sprintf(
+			"%s on interface %s (ip: %s, scoped: %t)",
+			r.DestCIDR, r.InterfaceName, r.SrcIP, r.IsInterfaceScoped,
+		)
+	}
 }

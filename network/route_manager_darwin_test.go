@@ -43,6 +43,21 @@ var _ = Describe("Route Manager", func() {
 		}
 	})
 
+	It("retrieves the default interface", func() {
+
+		isAdmin, err := run.IsAdmin()
+		Expect(err).NotTo(HaveOccurred())
+		if !isAdmin {
+			Fail("This test needs to be run with root privileges. i.e. sudo -E go test -v ./...")
+		}
+
+		routeManager, err := nc.NewRouteManager()
+		Expect(err).NotTo(HaveOccurred())
+		routableInterface, err := routeManager.GetDefaultInterface()
+		Expect(err).NotTo(HaveOccurred())
+		Expect(routableInterface).ToNot(BeNil())
+	})
+
 	It("creates a new default gateway with routes that bypass it", func() {
 
 		isAdmin, err := run.IsAdmin()

@@ -19,6 +19,10 @@ func (c *networkContext) NewRouteManager() (RouteManager, error) {
 	return rm, nil
 }
 
+func (m *routeManager) GetDefaultInterface() (RoutableInterface, error) {
+	return nil, nil
+}
+
 func (m *routeManager) GetRoutableInterface(ifaceName string) (RoutableInterface, error) {
 	return nil, nil
 }
@@ -38,16 +42,19 @@ func (m *routeManager) AddDefaultRoute(gateway string) error {
 func (m *routeManager) Clear() {
 }
 
+func (i *routableInterface) Address4() (string, string, error) {
+	return "", "", nil
+}
+
+func (i *routableInterface) Address6() (string, string, error) {
+	return "", "", nil
+}
+
 func (i *routableInterface) MakeDefaultRoute() error {
 	return nil
 }
 
-func (i *routableInterface) AddStaticRouteFrom(srcItf, srcNetwork string) error {
-	// Route packets from src to network this itf is connected
-	return nil
-}
-
-func (i *routableInterface) FowardTrafficFrom(srcItf, srcNetwork string) error {
+func (i *routableInterface) FowardTrafficFrom(srcItf RoutableInterface, srcNetwork, destNetworks string, nat bool) error {
 	// NAT packets from src to network this itf is connected
 	return nil
 }

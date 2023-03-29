@@ -32,6 +32,7 @@ type networkContext struct {
 var (
 	ifconfig, 
 	route,
+	pfctl,
 	arp,
 	networksetup run.CLI
 
@@ -119,6 +120,10 @@ func init() {
 		logger.ErrorMessage("networkContext.init(): Error creating CLI for /sbin/route: %s", err.Error())
 		return
 	}
+	if pfctl, err = run.NewCLI("/sbin/pfctl", home, &outputBuffer, &outputBuffer); err != nil {
+		logger.ErrorMessage("networkContext.init(): Error creating CLI for /sbin/pfctl: %s", err.Error())
+		return
+	}
 	if arp, err = run.NewCLI("/usr/sbin/arp", home, &outputBuffer, &outputBuffer); err != nil {
 		logger.ErrorMessage("networkContext.init(): Error creating CLI for /usr/sbin/arp: %s", err.Error())
 		return
@@ -142,6 +147,9 @@ func readNetworkInfo() {
 		results map[string][][]string		
 		line    string
 	)
+
+	Network.ScopedDefaults = nil
+	Network.StaticRoutes = nil
 
 	// read network routing details
 	readRouteTable()
