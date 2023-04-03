@@ -51,16 +51,18 @@ func (c *networkContext) Clear() {
 			"networkContext.Clear(): Error creating DNS manager to use to clear network context: %s", 
 			err.Error(),
 		)
+	} else {
+		dnsManager.Clear()
 	}
-	dnsManager.Clear()
 
 	if routeManager, err = c.NewRouteManager(); err != nil {
 		logger.ErrorMessage(
 			"networkContext.Clear(): Error creating DNS manager to use to clear network context: %s", 
 			err.Error(),
 		)
+	} else {
+		routeManager.Clear()
 	}
-	routeManager.Clear()
 }
 
 func init() {
