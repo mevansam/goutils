@@ -124,7 +124,10 @@ func (r *Request) do(method string, response *Response) (err error) {
 		httpResponse *http.Response
 	)
 
-	logger.TraceMessage("RestApiClient.Request.do(%s): processing request: #% v", method, r)
+	logger.TraceMessage(
+		"RestApiClient.Request.do(%s): processing request to: url: %s, headers: %+v, query args: %+v, body: %# v", 
+		method, r.client.url, r.Headers, r.QueryArgs, r.Body,
+	)
 
 	if r.client.authCrypt != nil {
 		if authToken, err = NewRequestAuthToken(r.client.authCrypt); err != nil {
