@@ -32,7 +32,8 @@ var _ = Describe("Route Manager", func() {
 			Fail(fmt.Sprintf("exec \"/sbin/ifconfig feth99 create\" failed: \n\n%s\n", outputBuffer.String()))
 		}
 
-		nc = network.NewNetworkContext()
+		nc, err = network.NewNetworkContext()
+		Expect(err).NotTo(HaveOccurred())
 	})
 
 	AfterEach(func() {

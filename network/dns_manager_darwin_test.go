@@ -42,7 +42,8 @@ var _ = Describe("DNS Manager", func() {
 		networksetup, err = run.NewCLI("/usr/sbin/networksetup", home, &outputBuffer, &outputBuffer)
 		Expect(err).NotTo(HaveOccurred())
 
-		nc = network.NewNetworkContext()
+		nc, err = network.NewNetworkContext()
+		Expect(err).NotTo(HaveOccurred())
 		
 		resetDNSSetting()
 	})
@@ -91,7 +92,8 @@ var _ = Describe("DNS Manager", func() {
 
 	It("sets dns and search domain where dns and search domains have not been explicitly configured", func() {
 
-		nc = network.NewNetworkContext()
+		nc, err = network.NewNetworkContext()
+		Expect(err).NotTo(HaveOccurred())
 		dnsManager, err := nc.NewDNSManager()
 		Expect(err).NotTo(HaveOccurred())
 

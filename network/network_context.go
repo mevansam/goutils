@@ -3,6 +3,7 @@ package network
 import (
 	"fmt"
 	"net/netip"
+	"time"
 )
 
 type Route struct {
@@ -36,6 +37,8 @@ var Network = struct {
 	StaticRoutes []*Route
 }{}
 
+var initErr chan error
+
 const (
 	WORLD4 = "0.0.0.0/0"
 	WORLD6 = "::/0"
@@ -55,4 +58,22 @@ func (r *Route) String() string {
 			r.DestCIDR, r.InterfaceName, r.SrcIP, r.IsInterfaceScoped,
 		)
 	}
+}
+
+func waitForInit() error {
+
+	var (
+		err error
+	)
+
+	select {
+	case err = <-initErr:
+	case <-time.After(time.Second * 30):
+		err = fmt.Errorf("timedout waiting for network to complete initialization")
+	}	
+	return err
+}
+
+func init() {
+	initErr = make(chan error)
 }

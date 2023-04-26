@@ -5,8 +5,8 @@ package network
 type networkContext struct {
 }
 
-func NewNetworkContext() NetworkContext {
-	return &networkContext{}
+func NewNetworkContext() (NetworkContext, error) {
+	return &networkContext{}, nil
 }
 
 func (c *networkContext) DefaultDeviceName() string {

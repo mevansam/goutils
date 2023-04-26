@@ -6,6 +6,7 @@ package network
 import (
 	"bufio"
 	"bytes"
+	"fmt"
 	"net"
 	"net/netip"
 	"regexp"
@@ -32,21 +33,23 @@ type networkContext struct {
 var (
 	ifconfig, 
 	route,
+	routeget,
 	pfctl,
-	arp,
 	networksetup run.CLI
 
-	netServiceName string	
+	netServiceName string
 )
 
-func NewNetworkContext() NetworkContext {
+func NewNetworkContext() (NetworkContext, error) {
 
-	readNetworkInfo()
+	if err := waitForInit(); err != nil {
+		return nil, err
+	}
 
 	return &networkContext{ 
 		origDNSServers:    []string{ "empty" },
 		origSearchDomains: []string{ "empty" },
-	}
+	}, nil
 }
 
 func (c *networkContext) DefaultDeviceName() string {
@@ -111,35 +114,39 @@ func init() {
 	)
 
 	// initialize networking CLIs
-	home, _ := homedir.Dir()
-	if ifconfig, err = run.NewCLI("/sbin/ifconfig", home, nullOut, nullOut); err != nil {
-		logger.ErrorMessage("networkContext.init(): Error creating CLI for /sbin/ifconfig: %s", err.Error())
-		return
-	}
-	if route, err = run.NewCLI("/sbin/route", home, nullOut, nullOut); err != nil {
-		logger.ErrorMessage("networkContext.init(): Error creating CLI for /sbin/route: %s", err.Error())
-		return
-	}
-	if pfctl, err = run.NewCLI("/sbin/pfctl", home, &outputBuffer, &outputBuffer); err != nil {
-		logger.ErrorMessage("networkContext.init(): Error creating CLI for /sbin/pfctl: %s", err.Error())
-		return
-	}
-	if arp, err = run.NewCLI("/usr/sbin/arp", home, &outputBuffer, &outputBuffer); err != nil {
-		logger.ErrorMessage("networkContext.init(): Error creating CLI for /usr/sbin/arp: %s", err.Error())
-		return
-	}
-	if networksetup, err = run.NewCLI("/usr/sbin/networksetup", home, &outputBuffer, &outputBuffer); err != nil {
-		logger.ErrorMessage("networkContext.init(): Error creating CLI for /usr/sbin/networksetup: %s", err.Error())
-		return
-	}
-
-	readNetworkInfo()
+	go func() {
+		home, _ := homedir.Dir()
+		if ifconfig, err = run.NewCLI("/sbin/ifconfig", home, nullOut, nullOut); err != nil {
+			logger.ErrorMessage("networkContext.init(): Error creating CLI for /sbin/ifconfig: %s", err.Error())
+			initErr <- err
+			return
+		}
+		if route, err = run.NewCLI("/sbin/route", home, nullOut, nullOut); err != nil {
+			logger.ErrorMessage("networkContext.init(): Error creating CLI for /sbin/route: %s", err.Error())
+			initErr <- err
+			return
+		}
+		if routeget, err = run.NewCLI("/sbin/route", home, &outputBuffer, &outputBuffer); err != nil {
+			logger.ErrorMessage("networkContext.init(): Error creating CLI for /sbin/route: %s", err.Error())
+			initErr <- err
+			return
+		}
+		if pfctl, err = run.NewCLI("/sbin/pfctl", home, &outputBuffer, &outputBuffer); err != nil {
+			logger.ErrorMessage("networkContext.init(): Error creating CLI for /sbin/pfctl: %s", err.Error())
+			initErr <- err
+			return
+		}
+		if networksetup, err = run.NewCLI("/usr/sbin/networksetup", home, &outputBuffer, &outputBuffer); err != nil {
+			logger.ErrorMessage("networkContext.init(): Error creating CLI for /usr/sbin/networksetup: %s", err.Error())
+			initErr <- err
+			return
+		}
+	
+		readNetworkInfo()
+	}()
 }
 
 func readNetworkInfo() {
-	if len(netServiceName) != 0 {
-		return
-	}
 
 	var (
 		err error
@@ -152,11 +159,15 @@ func readNetworkInfo() {
 	Network.StaticRoutes = nil
 
 	// read network routing details
-	readRouteTable()
+	if err = readRouteTable(); err != nil {
+		initErr <- err
+		return
+	}
 	if Network.DefaultIPv4Gateway == nil {
 		// enumerate all network service interfaces
 		if err = networksetup.Run([]string{ "-listnetworkserviceorder" }); err != nil {
 			logger.ErrorMessage("networkContext.init(): Error running \"networksetup -listnetworkserviceorder\": %s", err.Error())
+			initErr <- err
 			return
 		}
 		results = utils.ExtractMatches(outputBuffer.Bytes(), map[string]*regexp.Regexp{
@@ -175,31 +186,37 @@ func readNetworkInfo() {
 		// allow network service to re-initialize route table
 		time.Sleep(5 * time.Second)
 
-		readRouteTable()
+		if err = readRouteTable(); err != nil {
+			initErr <- err
+			return
+		}
 		if Network.DefaultIPv4Gateway == nil {
 			logger.ErrorMessage("networkContext.init(): Unable to determine the default gateway. Please restart you systems network services.")
+			initErr <- err
 			return
 		}
 	}
 
 	// determine network service name for default device
-	if err = arp.Run([]string{ "-a" }); err != nil {
-		logger.ErrorMessage("networkContext.init(): Error running \"arp -a\": %s", err.Error())
+	if err = routeget.Run([]string{ "get", "1.1.1.1" }); err != nil {
+		logger.ErrorMessage("networkContext.init(): Error running \"route get 1.1.1.1\": %s", err.Error())
+		initErr <- err
 		return
 	}
 	results = utils.ExtractMatches(outputBuffer.Bytes(), map[string]*regexp.Regexp{
-		"interfaces": regexp.MustCompile(`^(.*) \(([0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3})\) at ([0-9a-f]{1,2}:[0-9a-f]{1,2}:[0-9a-f]{1,2}:[0-9a-f]{1,2}:[0-9a-f]{1,2}:[0-9a-f]{1,2}) on ([a-z]+[0-9]+) ifscope \[ethernet\]$`),
+		"interface": regexp.MustCompile(`^\s*interface:\s*(.*)\s*$`),
 	})
 	outputBuffer.Reset()
 
 	lanGatewayItf := Network.DefaultIPv4Gateway.InterfaceName
-	lanItfs := results["interfaces"]	
-	if len(lanItfs) > 0 && len(lanItfs[0]) == 5 {
-		lanGatewayItf = lanItfs[0][4]
+	defaultItf := results["interface"]	
+	if len(defaultItf) > 0 && len(defaultItf[0]) == 2 {
+		lanGatewayItf = defaultItf[0][1]
 	}
 	
 	if err = networksetup.Run([]string{ "-listallhardwareports" }); err != nil {
 		logger.ErrorMessage("networkContext.init(): Error running \"networksetup -listallhardwareports\": %s", err.Error())
+		initErr <- err
 		return
 	}
 	matchDevice := "Device: " + lanGatewayItf
@@ -216,15 +233,17 @@ func readNetworkInfo() {
 	outputBuffer.Reset()
 
 	if len(netServiceName) == 0 {
-		logger.ErrorMessage(
-			"networkContext.init(): Unable to determine default network service name for interface \"%s\"", 
+		initErr <- fmt.Errorf(
+			"unable to determine default network service name for for interface \"%s\"", 
 			Network.DefaultIPv4Gateway.InterfaceName,
 		)
 		return
 	}
+
+	initErr <- nil
 }
 
-func readRouteTable() {
+func readRouteTable() error {
 
 	var (
 		err error
@@ -242,11 +261,11 @@ func readRouteTable() {
 
 	if rib, err = netroute.FetchRIB(syscall.AF_UNSPEC, syscall.NET_RT_DUMP2, 0); err != nil {
 		logger.ErrorMessage("networkContext.init(): Error fetching system route table: %s", err.Error())
-		return
+		return err
 	}
 	if msgs, err = netroute.ParseRIB(syscall.NET_RT_IFLIST2, rib); err != nil {
 		logger.ErrorMessage("networkContext.init(): Error parsing fetched route table data: %s", err.Error())
-		return
+		return err
 	}
 
 	defaultIPv4Route := netip.MustParsePrefix("0.0.0.0/0")
@@ -335,4 +354,6 @@ func readRouteTable() {
 			}
 		}
 	}
+
+	return nil
 }
