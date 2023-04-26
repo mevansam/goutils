@@ -17,7 +17,7 @@ type networkContext struct {
 	routedIPs  []netlink.Route
 }
 
-func NewNetworkContext() (NetworkContext, err) {
+func NewNetworkContext() (NetworkContext, error) {
 
 	if err := waitForInit(); err != nil {
 		return nil, err
