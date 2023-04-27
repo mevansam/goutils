@@ -1,6 +1,13 @@
 package network
 
-import "net/netip"
+import (
+	"fmt"
+	"net"
+	"net/netip"
+	"time"
+
+	"github.com/mevansam/goutils/logger"
+)
 
 var privateNetworks = []netip.Prefix{
 	// Private or RFC 1918 address space
@@ -20,4 +27,21 @@ func IsPrivateAddr(addr netip.Addr) bool {
 		}
 	}
 	return false
+}
+
+// test tcp connection
+func CanConnect(host string, port int) bool {
+
+	endpoint := fmt.Sprintf("%s:%d", host, port)
+	conn, err := net.DialTimeout("tcp", endpoint, time.Second)
+	if err != nil {
+		logger.TraceMessage(
+			"Connectivity test to '%s' failed: %s",
+			endpoint, err.Error(),
+		)
+		return false
+	}
+
+	defer conn.Close()
+	return true
 }
