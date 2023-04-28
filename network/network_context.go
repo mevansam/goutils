@@ -37,7 +37,10 @@ var Network = struct {
 	StaticRoutes []*Route
 }{}
 
-var initErr chan error
+var (
+	initErr     chan error
+	initialized bool
+)
 
 const (
 	WORLD4 = "0.0.0.0/0"
@@ -66,14 +69,18 @@ func waitForInit() error {
 		err error
 	)
 
-	select {
-	case err = <-initErr:
-	case <-time.After(time.Second * 30):
-		err = fmt.Errorf("timedout waiting for network to complete initialization")
-	}	
+	if !initialized {
+		select {
+		case err = <-initErr:
+			initialized = true
+		case <-time.After(time.Second * 30):
+			err = fmt.Errorf("timedout waiting for network to complete initialization")
+		}		
+	}
 	return err
 }
 
 func init() {
 	initErr = make(chan error)
+	initialized = false
 }
