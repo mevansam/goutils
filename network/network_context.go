@@ -49,6 +49,8 @@ const (
 	LAN6   = "6"
 )
 
+// route type functions
+
 func (r *Route) String() string {
 	if r.GatewayIP.IsValid() {
 		return fmt.Sprintf(
@@ -62,6 +64,22 @@ func (r *Route) String() string {
 		)
 	}
 }
+
+// network context type common functions
+
+func (c *networkContext) DefaultInterface() string {
+	return Network.DefaultIPv4Gateway.InterfaceName
+}
+
+func (c *networkContext) DefaultGateway() string {
+	return Network.DefaultIPv4Gateway.GatewayIP.String()
+}
+
+func (c *networkContext) DefaultIP() string {
+	return Network.DefaultIPv4Gateway.SrcIP.String()
+}
+
+// commong network context initialization functions
 
 func waitForInit() error {
 

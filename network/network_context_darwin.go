@@ -56,14 +56,6 @@ func (c *networkContext) DefaultDeviceName() string {
 	return netServiceName
 }
 
-func (c *networkContext) DefaultInterface() string {
-	return Network.DefaultIPv4Gateway.InterfaceName
-}
-
-func (c *networkContext) DefaultGateway() string {
-	return Network.DefaultIPv4Gateway.GatewayIP.String()
-}
-
 func (c *networkContext) DisableIPv6() error {
 	if err := networksetup.Run([]string{ "-setv6off", netServiceName }); err != nil {
 		logger.ErrorMessage("networkContext.DisableIPv6(): Error running \"networksetup -setv6off %s\": %s", netServiceName, err.Error())

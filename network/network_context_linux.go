@@ -30,14 +30,6 @@ func (c *networkContext) DefaultDeviceName() string {
 	return Network.DefaultIPv4Gateway.InterfaceName
 }
 
-func (c *networkContext) DefaultInterface() string {
-	return Network.DefaultIPv4Gateway.InterfaceName
-}
-
-func (c *networkContext) DefaultGateway() string {
-	return Network.DefaultIPv4Gateway.GatewayIP.String()
-}
-
 func (c *networkContext) DisableIPv6() error {
 	return nil
 }
@@ -94,6 +86,7 @@ func readNetworkInfo() {
 		netip.MustParseAddr("0.0.0.0"), 
 		netip.MustParsePrefix("0.0.0.0/0"), 
 		routes,
+		netlink.FAMILY_V4,
 	); err != nil {
 		initErr <- err
 		return
@@ -108,6 +101,7 @@ func readNetworkInfo() {
 		netip.MustParseAddr("::"),
 		netip.MustParsePrefix("::/0"),
 		routes,
+		netlink.FAMILY_V6,
 	); err != nil {
 		initErr <- err
 		return
@@ -128,6 +122,7 @@ func readRoutes(
 	defaultRouteIP netip.Addr, 
 	defaultRouteCIDR netip.Prefix,  
 	routes []netlink.Route,
+	family int,
 ) error {
 
 	var (
@@ -135,6 +130,8 @@ func readRoutes(
 		ok  bool
 
 		iface  *net.Interface
+		addrs  []net.Addr
+		prefix netip.Prefix
 	)
 
 	for _, route := range routes {
@@ -156,17 +153,35 @@ func readRoutes(
 				logger.ErrorMessage("networkContext.readRoutes(): Error invalid gateway IP: %s", err.Error())
 				continue
 			}
-		}
+		}		
 		if route.Src != nil {
 			if r.SrcIP, ok = netip.AddrFromSlice(route.Src); !ok {
 				logger.ErrorMessage("networkContext.readRoutes(): Error invalid source IP: %s", err.Error())
 				continue
 			}
+		} else {
+			if addrs, err = iface.Addrs(); err != nil {
+				logger.ErrorMessage(
+					"networkContext.readRoutes(): Unable to retrieve addresses of interface '%s': %s", 
+					iface.Name, err.Error(),
+				)
+			} else if len(addrs) > 0 {
+				if prefix, err = netip.ParsePrefix(addrs[0].String()); err != nil {
+					logger.ErrorMessage("networkContext.readRoutes(): Error invalid source IP: %s", err.Error())
+				} else {
+					r.SrcIP = prefix.Addr()
+				}
+			}
 		}
 		if route.Dst == nil {
 			r.DestIP = defaultRouteIP
 			r.DestCIDR = defaultRouteCIDR
-			Network.DefaultIPv4Gateway = r
+
+			if family == netlink.FAMILY_V4 {
+				Network.DefaultIPv4Gateway = r
+			} else {
+				Network.DefaultIPv6Gateway = r
+			}
 
 		} else {
 			if r.DestIP, ok = netip.AddrFromSlice(route.Dst.IP); !ok {

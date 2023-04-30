@@ -4,6 +4,7 @@ type NetworkContext interface {
 	DefaultDeviceName() string
 	DefaultInterface() string
 	DefaultGateway() string
+	DefaultIP() string
 
 	DisableIPv6() error
 
