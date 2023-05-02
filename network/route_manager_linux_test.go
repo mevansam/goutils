@@ -148,8 +148,6 @@ var _ = Describe("Route Manager", func() {
 			}
 		})
 
-		// TODO: write actual test assertions. Currently this test needs
-		// manual verification that routes are created and valid.
 		It("creates a NAT route on an interface", func() {
 			if skipTests {
 				fmt.Println("No second interface so skipping test \"creates a NAT route on an interface\"...")
@@ -170,11 +168,11 @@ var _ = Describe("Route Manager", func() {
 			ritf3, err := routeManager.GetRoutableInterface(itf3.Name)  // interface to lan2
 			Expect(err).ToNot(HaveOccurred())
 
-			ritf2IP, ritf2NW, err := ritf2. Address4()
+			ritf2IP, ritf2NW, err := ritf2.Address4()
 			Expect(err).ToNot(HaveOccurred())
 			Expect(ritf2IP).To(Equal("192.168.10.1"))
 			Expect(ritf2NW).To(Equal("192.168.10.0/24"))
-			ritf3IP, ritf3NW, err := ritf3. Address4()
+			ritf3IP, ritf3NW, err := ritf3.Address4()
 			Expect(err).ToNot(HaveOccurred())
 			Expect(ritf3IP).To(Equal("192.168.11.1"))
 			Expect(ritf3NW).To(Equal("192.168.11.0/24"))
@@ -195,12 +193,47 @@ var _ = Describe("Route Manager", func() {
 			fmt.Printf("\n# ip route show\n===\n%s===\n", outputBuffer.String())
 
 			outputBuffer.Reset()
-			err = run.RunAsAdminWithArgs([]string{ "/usr/sbin/nft", "list", "ruleset" }, &outputBuffer, &outputBuffer)
+			err = run.RunAsAdminWithArgs([]string{ 
+				"/bin/sh", "-c", 
+				"nft list ruleset | sed -n '/^table ip mycs_router_ipv4 {/,/^}/p' | sed -n '/chain forward {/,/}/p'",
+			}, &outputBuffer, &outputBuffer)
 			Expect(err).ToNot(HaveOccurred())
 	
-			fmt.Printf("\n# nft list tables\n===\n%s===\n", outputBuffer.String())
+			matched, unmatched := outputMatcher(outputBuffer, 
+				[]*regexp.Regexp{
+					regexp.MustCompile(`^\s+ct state invalid drop\s*$`),
+					regexp.MustCompile(`^\s+ct state established,related accept\s*$`),
+					// routing between lan1 to lan2
+					regexp.MustCompile(`^\s+iifname "eth1" ip saddr 192.168.10.0-192.168.10.255 oifname "eth2" ip daddr 192.168.11.0-192.168.11.255 accept\s*$`),
+					regexp.MustCompile(`^\s+iifname "eth2" ip saddr 192.168.11.0-192.168.11.255 oifname "eth1" ip daddr 192.168.10.0-192.168.10.255 accept\s*$`),
+					// allow lan1 access to internet
+					regexp.MustCompile(`^\s+iifname "eth1" ip saddr 192.168.10.0-192.168.10.255 oifname "eth0" accept\s*$`),
+					// allow lan2 access to only 8.8.8.8 externally
+					regexp.MustCompile(`^\s+iifname "eth2" ip saddr 192.168.11.0-192.168.11.255 oifname "eth0" ip daddr 8.8.8.8-8.8.8.8 accept\s*$`),
+				},
+			)
+			Expect(matched).To(Equal(6))
+			Expect(unmatched).To(Equal(0))
 
-			time.Sleep(time.Second * 10)
+			outputBuffer.Reset()
+			err = run.RunAsAdminWithArgs([]string{ 
+				"/bin/sh", "-c", 
+				"nft list ruleset | sed -n '/^table ip mycs_router_ipv4 {/,/^}/p' | sed -n '/chain nat {/,/}/p'",
+			}, &outputBuffer, &outputBuffer)
+			Expect(err).ToNot(HaveOccurred())
+
+			matched, unmatched = outputMatcher(outputBuffer, 
+				[]*regexp.Regexp{
+					// masq lan1 to world
+					regexp.MustCompile(`^\s+ip saddr 192.168.10.0-192.168.10.255 oifname "eth0" masquerade\s*$`),
+					// masq lan2 to world
+					regexp.MustCompile(`^\s+ip saddr 192.168.11.0-192.168.11.255 oifname "eth0" masquerade\s*$`),
+				},
+			)
+			Expect(matched).To(Equal(2))
+			Expect(unmatched).To(Equal(0))
+
+			time.Sleep(time.Second) // increase to pause for manual validation
 		})
 	})
 })

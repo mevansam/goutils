@@ -3,7 +3,6 @@
 package network_test
 
 import (
-	"bufio"
 	"bytes"
 	"fmt"
 	"regexp"
@@ -81,27 +80,15 @@ var _ = Describe("Route Manager", func() {
 		err = netstat.Run([]string{ "-nrf", "inet" })
 		Expect(err).NotTo(HaveOccurred())
 
-		fmt.Printf("\n%s\n", outputBuffer.String())
-
-		counter := 0
-		scanner := bufio.NewScanner(bytes.NewReader(outputBuffer.Bytes()))
-
-		var matchRoutes = func(line string) {
-			matched, _ := regexp.MatchString(`^default\s+192.168.111.1\s+UGScg?\s+feth99\s+$`, line)
-			if matched { counter++; return }
-			matched, _ = regexp.MatchString(`^34.204.21.102/32\s+([0-9]+\.?)+\s+UGSc\s+en[0-9]\s+$`, line)
-			if matched { counter++; return }
-			matched, _ = regexp.MatchString(`^192.168.111.1/32\s+\S+\s+\S+\s+feth99\s+\!?$`, line)
-			if matched { counter++; return }
-			matched, _ = regexp.MatchString(`^192.168.111.2/32\s+\S+\s+\S+\s+feth99\s+\!?$`, line)
-			if matched { counter++ }
-		}
-
-		for scanner.Scan() {
-			line := scanner.Text()
-			matchRoutes(line)
-			fmt.Printf("Test route: %s <= %d\n", line, counter)
-		}
-		Expect(counter).To(Equal(4))		
+		matched, unmatched := outputMatcher(outputBuffer, 
+			[]*regexp.Regexp{
+				regexp.MustCompile(`^default\s+192.168.111.1\s+UGScg?\s+feth99\s+$`),
+				regexp.MustCompile(`^34.204.21.102/32\s+([0-9]+\.?)+\s+UGSc\s+en[0-9]\s+$`),
+				regexp.MustCompile(`^192.168.111.1/32\s+\S+\s+\S+\s+feth99\s+\!?$`),
+				regexp.MustCompile(`^192.168.111.2/32\s+\S+\s+\S+\s+feth99\s+\!?$`),
+			},
+		)
+		Expect(matched).To(Equal(4))
+		Expect(unmatched).To(Equal(0))
 	})
 })
