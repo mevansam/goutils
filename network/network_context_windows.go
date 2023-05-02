@@ -1,4 +1,4 @@
-// +build windows
+//go:build windows
 
 package network
 
@@ -10,7 +10,7 @@ func NewNetworkContext() (NetworkContext, error) {
 }
 
 func (c *networkContext) DefaultDeviceName() string {
-	return Network.DefaultIPv4Gateway.InterfaceName
+	return Network.DefaultIPv4Route.InterfaceName
 }
 
 func (c *networkContext) DisableIPv6() error {

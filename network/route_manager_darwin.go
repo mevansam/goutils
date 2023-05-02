@@ -1,5 +1,4 @@
 //go:build darwin
-// +build darwin
 
 package network
 
@@ -53,8 +52,8 @@ func (c *networkContext) NewRouteManager() (RouteManager, error) {
 
 func (m *routeManager) GetDefaultInterface() (RoutableInterface, error) {
 	return &routableInterface{
-		ifaceName:      Network.DefaultIPv4Gateway.InterfaceName,
-		gatewayAddress: Network.DefaultIPv4Gateway.GatewayIP.String(),
+		ifaceName:      Network.DefaultIPv4Route.InterfaceName,
+		gatewayAddress: Network.DefaultIPv4Route.GatewayIP.String(),
 	}, nil
 }
 
@@ -115,7 +114,7 @@ func (m *routeManager) AddExternalRouteToIPs(ips []string) error {
 
 		ipCidr string
 	)
-	defaultGateway := Network.DefaultIPv4Gateway.GatewayIP.String()
+	defaultGateway := Network.DefaultIPv4Route.GatewayIP.String()
 
 	for _, ip := range ips {
 		if strings.HasSuffix(ip, ".0") {
@@ -143,7 +142,7 @@ func (m *routeManager) Clear() {
 	var (
 		err error
 	)
-	defaultGateway := Network.DefaultIPv4Gateway.GatewayIP.String()
+	defaultGateway := Network.DefaultIPv4Route.GatewayIP.String()
 
 	// clear routed ips if any
 	if len(m.nc.routedIPs) > 0 {

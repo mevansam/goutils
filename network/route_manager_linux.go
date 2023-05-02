@@ -1,5 +1,4 @@
 //go:build linux
-// +build linux
 
 package network
 
@@ -55,17 +54,17 @@ func (m *routeManager) GetDefaultInterface() (RoutableInterface, error) {
 	)
 	itf := routableInterface{}
 
-	if Network.DefaultIPv4Gateway != nil {
-		if itf.link, err = netlink.LinkByName(Network.DefaultIPv4Gateway.InterfaceName); err != nil {
+	if Network.DefaultIPv4Route != nil {
+		if itf.link, err = netlink.LinkByName(Network.DefaultIPv4Route.InterfaceName); err != nil {
 			return nil, err
 		}
-		itf.gatewayAddress = Network.DefaultIPv4Gateway.GatewayIP.AsSlice()
+		itf.gatewayAddress = Network.DefaultIPv4Route.GatewayIP.AsSlice()
 	
-	} else if Network.DefaultIPv6Gateway != nil {
-		if itf.link, err = netlink.LinkByName(Network.DefaultIPv6Gateway.InterfaceName); err != nil {
+	} else if Network.DefaultIPv6Route != nil {
+		if itf.link, err = netlink.LinkByName(Network.DefaultIPv6Route.InterfaceName); err != nil {
 			return nil, err
 		}
-		itf.gatewayAddress = Network.DefaultIPv6Gateway.GatewayIP.AsSlice()
+		itf.gatewayAddress = Network.DefaultIPv6Route.GatewayIP.AsSlice()
 
 	} else {
 		return nil, fmt.Errorf("default interface not found")
@@ -86,19 +85,19 @@ func (m *routeManager) GetRoutableInterface(ifaceName string) (RoutableInterface
 	}
 
 	// default interface
-	if Network.DefaultIPv4Gateway != nil && 
-		Network.DefaultIPv4Gateway.InterfaceName == ifaceName {
+	if Network.DefaultIPv4Route != nil && 
+		Network.DefaultIPv4Route.InterfaceName == ifaceName {
 
 		return &routableInterface{
-			gatewayAddress: Network.DefaultIPv4Gateway.GatewayIP.AsSlice(),
+			gatewayAddress: Network.DefaultIPv4Route.GatewayIP.AsSlice(),
 			link: link,
 		}, nil
 	}
-	if Network.DefaultIPv6Gateway != nil && 
-		Network.DefaultIPv6Gateway.InterfaceName == ifaceName {
+	if Network.DefaultIPv6Route != nil && 
+		Network.DefaultIPv6Route.InterfaceName == ifaceName {
 
 		return &routableInterface{
-			gatewayAddress: Network.DefaultIPv6Gateway.GatewayIP.AsSlice(),
+			gatewayAddress: Network.DefaultIPv6Route.GatewayIP.AsSlice(),
 			link: link,
 		}, nil
 	}
@@ -169,20 +168,20 @@ func (m *routeManager) AddExternalRouteToIPs(ips []string) error {
 
 		destIP net.IP
 	)
-	gatewayIP := Network.DefaultIPv4Gateway.GatewayIP.AsSlice()
+	gatewayIP := Network.DefaultIPv4Route.GatewayIP.AsSlice()
 
 	for _, ip := range ips {
 		if destIP = net.ParseIP(ip); destIP != nil {
 			route := netlink.Route{
 				Scope:     netlink.SCOPE_UNIVERSE,
-				LinkIndex: Network.DefaultIPv4Gateway.InterfaceIndex,
+				LinkIndex: Network.DefaultIPv4Route.InterfaceIndex,
 				Dst:       &net.IPNet{IP: destIP, Mask: net.CIDRMask(32, 32)},
 				Gw:        gatewayIP,
 			}
 			if err = netlink.RouteAdd(&route); err != nil {
 				logger.ErrorMessage(
 					"routeManager.AddExternalRouteToIPs(): Unable to add static route %s via gateway %s: %s", 
-					route.Dst, Network.DefaultIPv4Gateway.GatewayIP.String(), err.Error())
+					route.Dst, Network.DefaultIPv4Route.GatewayIP.String(), err.Error())
 			}	else {
 				m.nc.routedIPs = append(m.nc.routedIPs, route)
 			}
@@ -264,8 +263,8 @@ func (m *routeManager) Clear() {
 	// restore default lan route
 	if err = netlink.RouteReplace(&netlink.Route{
 		Scope:     netlink.SCOPE_UNIVERSE,
-		LinkIndex: Network.DefaultIPv4Gateway.InterfaceIndex,
-		Gw:        Network.DefaultIPv4Gateway.GatewayIP.AsSlice(),
+		LinkIndex: Network.DefaultIPv4Route.InterfaceIndex,
+		Gw:        Network.DefaultIPv4Route.GatewayIP.AsSlice(),
 	}); err != nil {
 		logger.ErrorMessage(
 			"routeManager.Clear(): Unable to restore default route: %s", 

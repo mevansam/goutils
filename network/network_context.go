@@ -23,17 +23,15 @@ type Route struct {
 var Network = struct {
 
 	// default interface and gateway for 
-	// all WAN traffic (i.e. 0.0.0.0/0)
-	DefaultIPv4Gateway *Route
-	DefaultIPv6Gateway *Route
+	// all WAN traffic (i.e. 0.0.0.0/0 & ::/0)
+	DefaultIPv4Route *Route
+	DefaultIPv6Route *Route
 
 	// additional default routes scoped
 	// to specific interfaces
   ScopedDefaults []*Route
 
-	// interface and gateway for LAN
-	// traffic that is routed to the
-	// internet
+	// all static routes
 	StaticRoutes []*Route
 }{}
 
@@ -68,15 +66,15 @@ func (r *Route) String() string {
 // network context type common functions
 
 func (c *networkContext) DefaultInterface() string {
-	return Network.DefaultIPv4Gateway.InterfaceName
+	return Network.DefaultIPv4Route.InterfaceName
 }
 
 func (c *networkContext) DefaultGateway() string {
-	return Network.DefaultIPv4Gateway.GatewayIP.String()
+	return Network.DefaultIPv4Route.GatewayIP.String()
 }
 
 func (c *networkContext) DefaultIP() string {
-	return Network.DefaultIPv4Gateway.SrcIP.String()
+	return Network.DefaultIPv4Route.SrcIP.String()
 }
 
 // commong network context initialization functions

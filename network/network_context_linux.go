@@ -1,4 +1,4 @@
-// +build linux
+//go:build linux
 
 package network
 
@@ -27,7 +27,7 @@ func NewNetworkContext() (NetworkContext, error) {
 }
 
 func (c *networkContext) DefaultDeviceName() string {
-	return Network.DefaultIPv4Gateway.InterfaceName
+	return Network.DefaultIPv4Route.InterfaceName
 }
 
 func (c *networkContext) DisableIPv6() error {
@@ -107,11 +107,8 @@ func readNetworkInfo() {
 		return
 	}
 
-	if Network.DefaultIPv4Gateway == nil {
-		initErr <- fmt.Errorf(
-			"unable to determine default network interface and gateway", 
-			Network.DefaultIPv4Gateway.InterfaceName,
-		)
+	if Network.DefaultIPv4Route == nil {
+		initErr <- fmt.Errorf("unable to determine default network interface and gateway")
 		return
 	}
 
@@ -178,9 +175,9 @@ func readRoutes(
 			r.DestCIDR = defaultRouteCIDR
 
 			if family == netlink.FAMILY_V4 {
-				Network.DefaultIPv4Gateway = r
+				Network.DefaultIPv4Route = r
 			} else {
-				Network.DefaultIPv6Gateway = r
+				Network.DefaultIPv6Route = r
 			}
 
 		} else {

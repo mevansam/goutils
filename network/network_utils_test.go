@@ -33,8 +33,8 @@ var _ = Describe("Wireguard Client", func() {
 // 	It("determine the configured default gateways", func() {
 
 // 		fmt.Println("\n\n**** ROUTE TABLE INFO ****")
-// 		fmt.Printf("\ndefault ipv4 gateway: %s\n", network.Network.DefaultIPv4Gateway)
-// 		fmt.Printf("default ipv6 gateway: %s\n",network. Network.DefaultIPv6Gateway)
+// 		fmt.Printf("\ndefault ipv4 gateway: %s\n", network.Network.DefaultIPv4Route)
+// 		fmt.Printf("default ipv6 gateway: %s\n",network. Network.DefaultIPv6Route)
 // 		fmt.Println("\nScoped Defaults:")
 // 		for _, d := range network.Network.ScopedDefaults {
 // 			fmt.Printf("  - %s\n", d)

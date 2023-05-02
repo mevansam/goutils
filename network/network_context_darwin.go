@@ -1,5 +1,4 @@
 //go:build darwin
-// +build darwin
 
 package network
 
@@ -155,7 +154,7 @@ func readNetworkInfo() {
 		initErr <- err
 		return
 	}
-	if Network.DefaultIPv4Gateway == nil {
+	if Network.DefaultIPv4Route == nil {
 		// enumerate all network service interfaces
 		if err = networksetup.Run([]string{ "-listnetworkserviceorder" }); err != nil {
 			logger.ErrorMessage("networkContext.init(): Error running \"networksetup -listnetworkserviceorder\": %s", err.Error())
@@ -182,7 +181,7 @@ func readNetworkInfo() {
 			initErr <- err
 			return
 		}
-		if Network.DefaultIPv4Gateway == nil {
+		if Network.DefaultIPv4Route == nil {
 			logger.ErrorMessage("networkContext.init(): Unable to determine the default gateway. Please restart you systems network services.")
 			initErr <- err
 			return
@@ -200,7 +199,7 @@ func readNetworkInfo() {
 	})
 	outputBuffer.Reset()
 
-	lanGatewayItf := Network.DefaultIPv4Gateway.InterfaceName
+	lanGatewayItf := Network.DefaultIPv4Route.InterfaceName
 	defaultItf := results["interface"]	
 	if len(defaultItf) > 0 && len(defaultItf[0]) == 2 {
 		lanGatewayItf = defaultItf[0][1]
@@ -227,7 +226,7 @@ func readNetworkInfo() {
 	if len(netServiceName) == 0 {
 		initErr <- fmt.Errorf(
 			"unable to determine default network service name for for interface \"%s\"", 
-			Network.DefaultIPv4Gateway.InterfaceName,
+			Network.DefaultIPv4Route.InterfaceName,
 		)
 		return
 	}
@@ -319,8 +318,8 @@ func readRouteTable() error {
 		if r.IsIPv6 {
 			if r.DestCIDR == defaultIPv6Route {
 				if !r.IsInterfaceScoped {
-					if Network.DefaultIPv6Gateway == nil {
-						Network.DefaultIPv6Gateway = r
+					if Network.DefaultIPv6Route == nil {
+						Network.DefaultIPv6Route = r
 					}	else {
 						logger.ErrorMessage("networkContext.init(): Duplicate default ip v6 route will be ignored: %# v", r)
 					}		
@@ -333,8 +332,8 @@ func readRouteTable() error {
 		} else {
 			if r.DestCIDR == defaultIPv4Route {
 				if !r.IsInterfaceScoped {
-					if Network.DefaultIPv4Gateway == nil {
-						Network.DefaultIPv4Gateway = r
+					if Network.DefaultIPv4Route == nil {
+						Network.DefaultIPv4Route = r
 					}	else {
 						logger.ErrorMessage("networkContext.init(): Duplicate default ip v4 route will be ignored: %# v", r)
 					}

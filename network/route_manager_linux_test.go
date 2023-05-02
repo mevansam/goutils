@@ -1,5 +1,4 @@
 //go:build linux
-// +build linux
 
 package network_test
 
@@ -35,7 +34,8 @@ var _ = Describe("Route Manager", func() {
 				Fail(fmt.Sprintf("exec \"/usr/sbin/ip link add wg99 type wireguard\" failed: \n\n%s\n", outputBuffer.String()))
 			}
 	
-			nc = network.NewNetworkContext()
+			nc, err = network.NewNetworkContext()
+			Expect(err).ToNot(HaveOccurred())
 		})
 	
 		AfterEach(func() {
@@ -124,9 +124,10 @@ var _ = Describe("Route Manager", func() {
 				Fail(fmt.Sprintf("exec \"/usr/sbin/ip addr add 192.168.11.1/24 dev eth2\" failed: \n\n%s\n", outputBuffer.String()))
 			}
 
-			nc = network.NewNetworkContext()
+			nc, err = network.NewNetworkContext()
+			Expect(err).ToNot(HaveOccurred())
 
-			fmt.Printf("\n>> default gateway : %+v\n", network.Network.DefaultIPv4Gateway)
+			fmt.Printf("\n>> default gateway : %+v\n", network.Network.DefaultIPv4Route)
 			for _, r := range network.Network.StaticRoutes {
 				fmt.Printf(">> static route : %+v\n", r)
 			}
