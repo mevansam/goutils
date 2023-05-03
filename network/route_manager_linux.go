@@ -23,9 +23,6 @@ type routeManager struct {
 type routableInterface struct {
 	link           netlink.Link
 	gatewayAddress net.IP
-
-	forwardRuleMap map[string]*nftables.Rule
-	natRuleMap map[string]*nftables.Rule
 }
 
 type packetFilterRouter struct {
@@ -35,9 +32,15 @@ type packetFilterRouter struct {
 	input   []*nftables.Chain
 	forward []*nftables.Chain
 	nat     []*nftables.Chain
+
+	forwardRuleMap map[string]*nftables.Rule
+	natRuleMap map[string]*nftables.Rule
 }
 
-var router *packetFilterRouter = &packetFilterRouter{}
+var router *packetFilterRouter = &packetFilterRouter{
+	forwardRuleMap: make(map[string]*nftables.Rule),
+	natRuleMap:     make(map[string]*nftables.Rule),
+}
 
 func (c *networkContext) NewRouteManager() (RouteManager, error) {
 
@@ -315,16 +318,16 @@ func (i *routableInterface) MakeDefaultRoute() error {
 	})
 }
 
-func (i *routableInterface) FowardTrafficFrom(srcItf RoutableInterface, srcNetwork, destNetwork string, withNat bool) error {
+func (i *routableInterface) FowardTrafficFrom(srcItf RoutableInterface, srcNetwork, dstNetwork string, withNat bool) error {
 
 	var (
 		err error
 
-		srcNetworkPrefix  netip.Prefix
-		destNetworkPrefix netip.Prefix
+		srcNetworkPrefix netip.Prefix
+		dstNetworkPrefix netip.Prefix
 
 		table                *nftables.Table
-		forward, nat         *nftables.Chain
+		forward, nat         *nftables.Chain		
 		forwardRule, natRule *nftables.Rule
 	)
 	srcRitf := srcItf.(*routableInterface)
@@ -342,129 +345,181 @@ func (i *routableInterface) FowardTrafficFrom(srcItf RoutableInterface, srcNetwo
 	if srcNetworkPrefix, err = getNetworkPrefix(srcRitf, srcNetwork); err != nil {
 		return err
 	}
-	if destNetworkPrefix, err = getNetworkPrefix(i, destNetwork); err != nil {
+	if dstNetworkPrefix, err = getNetworkPrefix(i, dstNetwork); err != nil {
 		return err
 	}
-	if srcNetworkPrefix.Addr().BitLen() != destNetworkPrefix.Addr().BitLen() {
+	if srcNetworkPrefix.Addr().BitLen() != dstNetworkPrefix.Addr().BitLen() {
 		return fmt.Errorf("attempt to create forwarding rules between incompatible network address spaces")
 	}
 
 	// Forward and NAT packets from private device & network 
 	// to dest network with nat if specified via this interface
 
+	// delete any existing rules for same forwarding request
+	// if err = i.DeleteTrafficFowarding(srcItf, srcNetwork, dstNetwork); err != nil {
+	// 	return err
+	// }
+		
 	is4 := srcNetworkPrefix.Addr().Is4()
+	addrLen, srcOffset, destOffset := ipHeaderOffsets(is4)
+
 	if table, forward, nat, err = router.getTables(is4); err != nil {
 		return err
 	}
+
+	iritfName := srcRitf.link.Attrs().Name
+	oritfName := i.link.Attrs().Name
+	ruleKey := iritfName+">"+oritfName+":"+srcNetwork+":"+dstNetwork
 	
-	iifname := []byte(srcRitf.link.Attrs().Name+"\x00")
-	oifname := []byte(i.link.Attrs().Name+"\x00")
+	iifname := []byte(iritfName+"\x00")
+	oifname := []byte(oritfName+"\x00")
 
 	srcNetworkRange := netipx.RangeOfPrefix(srcNetworkPrefix)
-	destNetworkRange := netipx.RangeOfPrefix(destNetworkPrefix)
+	dstNetworkRange := netipx.RangeOfPrefix(dstNetworkPrefix)
 
-	if is4 {
-		forwardRule = &nftables.Rule{
+	// ip saddr <srcNetwork> ip daddr <dstNetwork>
+	ipSrcDstExprs := []expr.Any{		
+		// [ payload load 4b @ network header + 12 (src addr) => reg 1 ]
+		&expr.Payload{
+			DestRegister: 1,
+			Base:         expr.PayloadBaseNetworkHeader,
+			Offset:       srcOffset,
+			Len:          addrLen,
+		},
+		// [ range neq reg 1 <src network min> - <src network max> ]
+		&expr.Range{
+			Op:       expr.CmpOpEq,
+			Register: 1,
+			FromData: srcNetworkRange.From().AsSlice(),
+			ToData:   srcNetworkRange.To().AsSlice(),
+		},		
+	}
+	if dstNetwork != WORLD4 && dstNetwork != WORLD6 {
+		ipSrcDstExprs = append(ipSrcDstExprs, 
+			// [ payload load 4b @ network header + 16 (dest addr) => reg 1 ]
+			&expr.Payload{
+				DestRegister: 1,
+				Base:         expr.PayloadBaseNetworkHeader,
+				Offset:       destOffset,
+				Len:          addrLen,
+			},
+			// [ range neq reg 1 <src network min> - <src network max> ]
+			&expr.Range{
+				Op:       expr.CmpOpEq,
+				Register: 1,
+				FromData: dstNetworkRange.From().AsSlice(),
+				ToData:   dstNetworkRange.To().AsSlice(),
+			},			
+		)	
+	}
+
+	forwardRule = &nftables.Rule{
+		Table: table,
+		Chain: forward,
+	}
+	forwardRule.Exprs = append(
+		// iifname "srcItf" oifname "i" ip saddr <srcNetwork>ip daddr <dstNetwork> accept
+		[]expr.Any{
+			// [ meta load iifname => reg 1 ]
+			&expr.Meta{Key: expr.MetaKeyIIFNAME, Register: 1},
+			// [ cmp eq reg 1 <iifname> ]
+			&expr.Cmp{
+				Op:       expr.CmpOpEq,
+				Register: 1,
+				Data:     iifname,
+			},
+			// [ meta load iifname => reg 1 ]
+			&expr.Meta{Key: expr.MetaKeyOIFNAME, Register: 1},
+			// [ cmp eq reg 1 <oifname> ]
+			&expr.Cmp{
+				Op:       expr.CmpOpEq,
+				Register: 1,
+				Data:     oifname,
+			},
+		},
+		append(
+			ipSrcDstExprs,
+			//[ immediate reg 0 accept ]
+			&expr.Verdict{
+				Kind: expr.VerdictAccept,
+			},
+		)...
+	)
+
+	if withNat {
+		natRule = &nftables.Rule{
 			Table: table,
-			Chain: forward,
-			// iifname "srcItf" ip saddr <srcNetwork> oifname "i" ip daddr <destNetwork> accept
-			Exprs: []expr.Any{
-				// [ meta load iifname => reg 1 ]
-				&expr.Meta{Key: expr.MetaKeyIIFNAME, Register: 1},
-				// [ cmp eq reg 1 <iifname> ]
-				&expr.Cmp{
-					Op:       expr.CmpOpEq,
-					Register: 1,
-					Data:     iifname,
-				},
-				// [ payload load 4b @ network header + 12 (src addr) => reg 1 ]
-				&expr.Payload{
-					DestRegister: 1,
-					Base:         expr.PayloadBaseNetworkHeader,
-					Offset:       12,
-					Len:          4,
-				},
-				// [ range neq reg 1 <src network min> - <src network max> ]
-				&expr.Range{
-					Op:       expr.CmpOpEq,
-					Register: 1,
-					FromData: srcNetworkRange.From().AsSlice(),
-					ToData:   srcNetworkRange.To().AsSlice(),
-				},
-				// [ meta load iifname => reg 1 ]
+			Chain: nat,
+		}
+		natRule.Exprs = append(
+			// oifname "i" ip saddr <srcNetwork> ip daddr <dstNetwork> masquerade
+			[]expr.Any{	
+				// meta load oifname => reg 1
 				&expr.Meta{Key: expr.MetaKeyOIFNAME, Register: 1},
 				// [ cmp eq reg 1 <oifname> ]
 				&expr.Cmp{
 					Op:       expr.CmpOpEq,
 					Register: 1,
 					Data:     oifname,
-				},
+				},					
 			},
-		}
-		if destNetwork != WORLD4 {
-			forwardRule.Exprs = append(forwardRule.Exprs, 
-				// [ payload load 4b @ network header + 16 (dest addr) => reg 1 ]
-				&expr.Payload{
-					DestRegister: 1,
-					Base:         expr.PayloadBaseNetworkHeader,
-					Offset:       16,
-					Len:          4,
-				},
-				// [ range neq reg 1 <src network min> - <src network max> ]
-				&expr.Range{
-					Op:       expr.CmpOpEq,
-					Register: 1,
-					FromData: destNetworkRange.From().AsSlice(),
-					ToData:   destNetworkRange.To().AsSlice(),
-				},			
-			)	
-		}
-		forwardRule.Exprs = append(forwardRule.Exprs, 
-			//[ immediate reg 0 accept ]
-			&expr.Verdict{
-				Kind: expr.VerdictAccept,
-			},
+			append(
+				ipSrcDstExprs, 
+				// masq
+				&expr.Masq{},
+			)...
 		)
-		if withNat {
-			natRule = &nftables.Rule{
-				Table: table,
-				Chain: nat,
-				// ip saddr <srcNetwork> oifname "i"
-				Exprs: []expr.Any{
-					// [ payload load 4b @ network header + 12 (src addr) => reg 1 ]
-					&expr.Payload{
-						DestRegister: 1,
-						Base:         expr.PayloadBaseNetworkHeader,
-						Offset:       12,
-						Len:          4,
-					},
-					// [ range neq reg 1 <src network min> - <src network max> ]
-					&expr.Range{
-						Op:       expr.CmpOpEq,
-						Register: 1,
-						FromData: srcNetworkRange.From().AsSlice(),
-						ToData:   srcNetworkRange.To().AsSlice(),
-					},				
-					// meta load oifname => reg 1
-					&expr.Meta{Key: expr.MetaKeyOIFNAME, Register: 1},
-					// [ cmp eq reg 1 <oifname> ]
-					&expr.Cmp{
-						Op:       expr.CmpOpEq,
-						Register: 1,
-						Data:     oifname,
-					},
-					// masq
-					&expr.Masq{},
-				},
-			}
-		}
-	}	
-	router.nft.AddRule(forwardRule)
+	}
+
+	router.forwardRuleMap[ruleKey] = router.nft.AddRule(forwardRule)
 	if withNat {
-		router.nft.AddRule(natRule)
+		router.natRuleMap[ruleKey] = router.nft.AddRule(natRule)
 	}
 
 	return router.nft.Flush()
+}
+
+func (i *routableInterface) DeleteTrafficFowarding(srcItf RoutableInterface, srcNetwork, dstNetwork string) error {
+	
+	var (
+		err error
+		ok  bool
+
+		forwardRule, natRule *nftables.Rule
+	)
+	srcRitf := srcItf.(*routableInterface)
+
+	iritfName := srcRitf.link.Attrs().Name
+	oritfName := i.link.Attrs().Name
+	ruleKey := iritfName+">"+oritfName+":"+srcNetwork+":"+dstNetwork
+	fmt.Printf("=> deleting: %s\n", ruleKey)
+	if forwardRule, ok = router.forwardRuleMap[ruleKey]; ok {
+		fmt.Printf("=1=> deleting forward: %+v\n", forwardRule)
+		if err = router.nft.DelRule(forwardRule); err != nil {
+			return err
+		}
+		delete(router.forwardRuleMap, ruleKey)
+	}
+	if natRule, ok = router.natRuleMap[ruleKey]; ok {
+		fmt.Printf("=2=> deleting nat: %+v\n", natRule)
+		if err = router.nft.DelRule(natRule); err != nil {
+			return err
+		}
+		delete(router.natRuleMap, ruleKey)
+	}
+
+	return router.nft.Flush()
+}
+
+// helper functions
+
+// returns ip addrLen and srcOffset, destOffset in ip header
+func ipHeaderOffsets(is4 bool) (uint32, uint32, uint32) {
+	if (is4) {
+		return 4, 12, 16
+	} else {
+		return 16, 64, 192
+	}
 }
 
 // packetFilterRouter functions
