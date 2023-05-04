@@ -36,4 +36,5 @@ type RoutableInterface interface {
 	Address6() (string, string, error)
 	MakeDefaultRoute() error
 	FowardTrafficFrom(srcItf RoutableInterface, srcNetwork, destNetwork string, nat bool) error
+	DeleteTrafficFowarding(srcItf RoutableInterface, srcNetwork, destNetwork string) error
 }

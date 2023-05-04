@@ -194,3 +194,7 @@ func (i *routableInterface) FowardTrafficFrom(srcItf RoutableInterface, srcNetwo
 	// https://apple.stackexchange.com/questions/363099/how-to-forward-traffic-from-one-machine-to-another-with-pfctl
 	return nil
 }
+
+func (i *routableInterface) DeleteTrafficFowarding(srcItf RoutableInterface, srcNetwork, destNetwork string) error {
+	return nil
+}

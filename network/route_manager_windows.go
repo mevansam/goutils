@@ -57,3 +57,7 @@ func (i *routableInterface) FowardTrafficFrom(srcItf RoutableInterface, srcNetwo
 	// NAT packets from src to network this itf is connected
 	return nil
 }
+
+func (i *routableInterface) DeleteTrafficFowarding(srcItf RoutableInterface, srcNetwork, destNetwork string) error {
+	return nil
+}

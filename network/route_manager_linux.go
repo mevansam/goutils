@@ -3,6 +3,7 @@
 package network
 
 import (
+	"bytes"
 	"fmt"
 	"net"
 	"net/netip"
@@ -352,14 +353,6 @@ func (i *routableInterface) FowardTrafficFrom(srcItf RoutableInterface, srcNetwo
 		return fmt.Errorf("attempt to create forwarding rules between incompatible network address spaces")
 	}
 
-	// Forward and NAT packets from private device & network 
-	// to dest network with nat if specified via this interface
-
-	// delete any existing rules for same forwarding request
-	// if err = i.DeleteTrafficFowarding(srcItf, srcNetwork, dstNetwork); err != nil {
-	// 	return err
-	// }
-		
 	is4 := srcNetworkPrefix.Addr().Is4()
 	addrLen, srcOffset, destOffset := ipHeaderOffsets(is4)
 
@@ -392,7 +385,7 @@ func (i *routableInterface) FowardTrafficFrom(srcItf RoutableInterface, srcNetwo
 			Register: 1,
 			FromData: srcNetworkRange.From().AsSlice(),
 			ToData:   srcNetworkRange.To().AsSlice(),
-		},		
+		},
 	}
 	if dstNetwork != WORLD4 && dstNetwork != WORLD6 {
 		ipSrcDstExprs = append(ipSrcDstExprs, 
@@ -471,12 +464,33 @@ func (i *routableInterface) FowardTrafficFrom(srcItf RoutableInterface, srcNetwo
 		)
 	}
 
-	router.forwardRuleMap[ruleKey] = router.nft.AddRule(forwardRule)
+	router.nft.AddRule(forwardRule)
 	if withNat {
-		router.natRuleMap[ruleKey] = router.nft.AddRule(natRule)
+		router.nft.AddRule(natRule)
 	}
 
-	return router.nft.Flush()
+	if err = router.nft.Flush(); err == nil {
+		if forwardRule, err = loadSavedRule(forwardRule, is4); err != nil {
+			logger.ErrorMessage(
+				"routableInterface.FowardTrafficFrom(): NFT forward rule flushed but rule with handle could not be loaded: %s",
+				err.Error(),
+			)
+		} else {
+			router.forwardRuleMap[ruleKey] = forwardRule
+		}
+		if withNat {
+			if natRule, err = loadSavedRule(natRule, is4); err != nil {
+				logger.ErrorMessage(
+					"routableInterface.FowardTrafficFrom(): NFT nat rule flushed but rule with handle could not be loaded: %s",
+					err.Error(),
+				)
+			} else {
+				router.natRuleMap[ruleKey] = natRule
+			}
+		}
+		return nil
+	}
+	return err
 }
 
 func (i *routableInterface) DeleteTrafficFowarding(srcItf RoutableInterface, srcNetwork, dstNetwork string) error {
@@ -492,16 +506,13 @@ func (i *routableInterface) DeleteTrafficFowarding(srcItf RoutableInterface, src
 	iritfName := srcRitf.link.Attrs().Name
 	oritfName := i.link.Attrs().Name
 	ruleKey := iritfName+">"+oritfName+":"+srcNetwork+":"+dstNetwork
-	fmt.Printf("=> deleting: %s\n", ruleKey)
 	if forwardRule, ok = router.forwardRuleMap[ruleKey]; ok {
-		fmt.Printf("=1=> deleting forward: %+v\n", forwardRule)
 		if err = router.nft.DelRule(forwardRule); err != nil {
 			return err
 		}
 		delete(router.forwardRuleMap, ruleKey)
 	}
 	if natRule, ok = router.natRuleMap[ruleKey]; ok {
-		fmt.Printf("=2=> deleting nat: %+v\n", natRule)
 		if err = router.nft.DelRule(natRule); err != nil {
 			return err
 		}
@@ -520,6 +531,74 @@ func ipHeaderOffsets(is4 bool) (uint32, uint32, uint32) {
 	} else {
 		return 16, 64, 192
 	}
+}
+
+func loadSavedRule(rule *nftables.Rule, is4 bool) (*nftables.Rule, error) {
+
+	var (
+		err error
+
+		rules []*nftables.Rule
+
+		ruleExprData [][]byte
+		exprData     []byte
+	)
+
+	for _, e := range rule.Exprs {
+		if is4 {
+			exprData, err = expr.Marshal(byte(nftables.TableFamilyIPv4), e)
+		} else {
+			exprData, err = expr.Marshal(byte(nftables.TableFamilyIPv6), e)
+		}
+		if err != nil {
+			return nil, err
+		}
+		ruleExprData = append(ruleExprData, exprData)
+	}
+
+	// asynchronously match saved rules data with given
+	// rule data to get saved instance with handle
+
+	if rules, err = router.nft.GetRules(rule.Table, rule.Chain); err != nil {
+		return nil, err
+	}
+
+	foundRule := make(chan *nftables.Rule, len(rules))
+	checkRuleMatch := func(savedRule, rule *nftables.Rule, ruleExprData [][]byte) {
+		if savedRule.Flags == rule.Flags && bytes.Equal(savedRule.UserData, rule.UserData) {
+			for i, e := range savedRule.Exprs {
+				if is4 {
+					exprData, err = expr.Marshal(byte(nftables.TableFamilyIPv4), e)
+				} else {
+					exprData, err = expr.Marshal(byte(nftables.TableFamilyIPv6), e)
+				}
+				if err != nil {
+					logger.ErrorMessage("loadSavedRule(): Rule marshal error: %s", err.Error())
+					foundRule <-nil
+					return
+				}
+				if !bytes.Equal(exprData, ruleExprData[i]) {
+					foundRule <-nil
+					return
+				}
+			}
+			foundRule <-savedRule
+		}
+	}
+	for _, r := range rules {
+		go checkRuleMatch(r, rule, ruleExprData)
+	}
+	for i := 0; i < len(rules); i++ {
+		if rule = <-foundRule; rule != nil {
+			break
+		}
+	}
+
+	if rule == nil {
+		return nil, fmt.Errorf("saved rule instance not found")
+	} else {
+		return rule, nil
+	}	
 }
 
 // packetFilterRouter functions

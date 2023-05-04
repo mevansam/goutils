@@ -203,19 +203,8 @@ var _ = Describe("Route Manager", func() {
 			}, &outputBuffer, &outputBuffer)
 			Expect(err).ToNot(HaveOccurred())
 	
-			matched, unmatched := outputMatcher(outputBuffer, 
-				[]*regexp.Regexp{
-					regexp.MustCompile(`^\s+ct state invalid drop\s*$`),
-					regexp.MustCompile(`^\s+ct state established,related accept\s*$`),
-					// routing between lan1 to lan2
-					regexp.MustCompile(`^\s+iifname "eth1" oifname "eth2" ip saddr 192.168.10.0-192.168.10.255 ip daddr 192.168.11.0-192.168.11.255 accept\s*$`),
-					regexp.MustCompile(`^\s+iifname "eth2" oifname "eth1" ip saddr 192.168.11.0-192.168.11.255 ip daddr 192.168.10.0-192.168.10.255 accept\s*$`),
-					// allow lan1 access to internet
-					regexp.MustCompile(`^\s+iifname "eth1" oifname "eth0" ip saddr 192.168.10.0-192.168.10.255 accept\s*$`),
-					// allow lan2 access to only 8.8.8.8 externally
-					regexp.MustCompile(`^\s+iifname "eth2" oifname "eth0" ip saddr 192.168.11.0-192.168.11.255 ip daddr 8.8.8.8-8.8.8.8 accept\s*$`),
-				},
-			)
+			fmt.Printf("\n# nft list ruleset - forward rules after config\n")
+			matched, unmatched := outputMatcher(outputBuffer, forwardRuleMatches)
 			Expect(matched).To(Equal(6))
 			Expect(unmatched).To(Equal(0))
 
@@ -226,63 +215,61 @@ var _ = Describe("Route Manager", func() {
 			}, &outputBuffer, &outputBuffer)
 			Expect(err).ToNot(HaveOccurred())
 
-			matched, unmatched = outputMatcher(outputBuffer, 
-				[]*regexp.Regexp{
-					// masq lan1 to world
-					regexp.MustCompile(`^\s+oifname "eth0" ip saddr 192.168.10.0-192.168.10.255 masquerade\s*$`),
-					// masq lan2 to world
-					regexp.MustCompile(`^\s+oifname "eth0" ip saddr 192.168.11.0-192.168.11.255 ip daddr 8.8.8.8-8.8.8.8 masquerade\s*$`),
-				},
-			)
+			fmt.Printf("\n# nft list ruleset - nat rules after config\n")
+			matched, unmatched = outputMatcher(outputBuffer, natRuleMatches)
 			Expect(matched).To(Equal(2))
 			Expect(unmatched).To(Equal(0))
 
-			// // delete forwarding rules
-			// err = ritf1.DeleteTrafficFowarding(ritf3, network.LAN4, "8.8.8.8/32")
-			// Expect(err).ToNot(HaveOccurred())
+			time.Sleep(time.Second * 15) // increase to pause for manual validation
 
-			// outputBuffer.Reset()
-			// err = run.RunAsAdminWithArgs([]string{ 
-			// 	"/bin/sh", "-c", 
-			// 	"nft list ruleset | sed -n '/^table ip mycs_router_ipv4 {/,/^}/p' | sed -n '/chain forward {/,/}/p'",
-			// }, &outputBuffer, &outputBuffer)
-			// Expect(err).ToNot(HaveOccurred())
+			// delete forwarding rules
+			err = ritf1.DeleteTrafficFowarding(ritf3, network.LAN4, "8.8.8.8/32")
+			Expect(err).ToNot(HaveOccurred())
 
-			// matched, unmatched = outputMatcher(outputBuffer, 
-			// 	[]*regexp.Regexp{
-			// 		regexp.MustCompile(`^\s+ct state invalid drop\s*$`),
-			// 		regexp.MustCompile(`^\s+ct state established,related accept\s*$`),
-			// 		// routing between lan1 to lan2
-			// 		regexp.MustCompile(`^\s+iifname "eth1" ip saddr 192.168.10.0-192.168.10.255 oifname "eth2" ip daddr 192.168.11.0-192.168.11.255 accept\s*$`),
-			// 		regexp.MustCompile(`^\s+iifname "eth2" ip saddr 192.168.11.0-192.168.11.255 oifname "eth1" ip daddr 192.168.10.0-192.168.10.255 accept\s*$`),
-			// 		// allow lan1 access to internet
-			// 		regexp.MustCompile(`^\s+iifname "eth1" ip saddr 192.168.10.0-192.168.10.255 oifname "eth0" accept\s*$`),
-			// 		// allow lan2 access to only 8.8.8.8 externally
-			// 		regexp.MustCompile(`^\s+iifname "eth2" ip saddr 192.168.11.0-192.168.11.255 oifname "eth0" ip daddr 8.8.8.8-8.8.8.8 accept\s*$`),
-			// 	},
-			// )
-			// Expect(matched).To(Equal(5))
-			// Expect(unmatched).To(Equal(1))
+			outputBuffer.Reset()
+			err = run.RunAsAdminWithArgs([]string{ 
+				"/bin/sh", "-c", 
+				"nft list ruleset | sed -n '/^table ip mycs_router_ipv4 {/,/^}/p' | sed -n '/chain forward {/,/}/p'",
+			}, &outputBuffer, &outputBuffer)
+			Expect(err).ToNot(HaveOccurred())
 
-			// outputBuffer.Reset()
-			// err = run.RunAsAdminWithArgs([]string{ 
-			// 	"/bin/sh", "-c", 
-			// 	"nft list ruleset | sed -n '/^table ip mycs_router_ipv4 {/,/^}/p' | sed -n '/chain nat {/,/}/p'",
-			// }, &outputBuffer, &outputBuffer)
-			// Expect(err).ToNot(HaveOccurred())
+			fmt.Printf("\n# nft list ruleset - forward rules after deletion of rule\n")
+			matched, unmatched = outputMatcher(outputBuffer, forwardRuleMatches)
+			Expect(matched).To(Equal(5))
+			Expect(unmatched).To(Equal(1))
 
-			// matched, unmatched = outputMatcher(outputBuffer, 
-			// 	[]*regexp.Regexp{
-			// 		// masq lan1 to world
-			// 		regexp.MustCompile(`^\s+ip saddr 192.168.10.0-192.168.10.255 oifname "eth0" masquerade\s*$`),
-			// 		// masq lan2 to world
-			// 		regexp.MustCompile(`^\s+ip saddr 192.168.11.0-192.168.11.255 oifname "eth0" masquerade\s*$`),
-			// 	},
-			// )
-			// Expect(matched).To(Equal(1))
-			// Expect(unmatched).To(Equal(1))
+			outputBuffer.Reset()
+			err = run.RunAsAdminWithArgs([]string{ 
+				"/bin/sh", "-c", 
+				"nft list ruleset | sed -n '/^table ip mycs_router_ipv4 {/,/^}/p' | sed -n '/chain nat {/,/}/p'",
+			}, &outputBuffer, &outputBuffer)
+			Expect(err).ToNot(HaveOccurred())
 
-			time.Sleep(time.Second * 60) // increase to pause for manual validation
+			fmt.Printf("\n# nft list ruleset - nat rules after deletion of rule\n")
+			matched, unmatched = outputMatcher(outputBuffer, natRuleMatches)
+			Expect(matched).To(Equal(1))
+			Expect(unmatched).To(Equal(1))
+
+			time.Sleep(time.Second * 15) // increase to pause for manual validation
 		})
 	})
 })
+
+var forwardRuleMatches = []*regexp.Regexp{
+	regexp.MustCompile(`^\s+ct state invalid drop\s*$`),
+	regexp.MustCompile(`^\s+ct state established,related accept\s*$`),
+	// routing between lan1 to lan2
+	regexp.MustCompile(`^\s+iifname "eth1" oifname "eth2" ip saddr 192.168.10.0-192.168.10.255 ip daddr 192.168.11.0-192.168.11.255 accept\s*$`),
+	regexp.MustCompile(`^\s+iifname "eth2" oifname "eth1" ip saddr 192.168.11.0-192.168.11.255 ip daddr 192.168.10.0-192.168.10.255 accept\s*$`),
+	// allow lan1 access to internet
+	regexp.MustCompile(`^\s+iifname "eth1" oifname "eth0" ip saddr 192.168.10.0-192.168.10.255 accept\s*$`),
+	// allow lan2 access to only 8.8.8.8 externally
+	regexp.MustCompile(`^\s+iifname "eth2" oifname "eth0" ip saddr 192.168.11.0-192.168.11.255 ip daddr 8.8.8.8-8.8.8.8 accept\s*$`),
+}
+
+var natRuleMatches = []*regexp.Regexp{
+	// masq lan1 to world
+	regexp.MustCompile(`^\s+oifname "eth0" ip saddr 192.168.10.0-192.168.10.255 masquerade\s*$`),
+	// masq lan2 to only 8.8.8.8 externally
+	regexp.MustCompile(`^\s+oifname "eth0" ip saddr 192.168.11.0-192.168.11.255 ip daddr 8.8.8.8-8.8.8.8 masquerade\s*$`),
+}
