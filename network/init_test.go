@@ -26,20 +26,23 @@ var _ = AfterSuite(func() {
 })
 
 func outputMatcher(buffer bytes.Buffer, matchers []*regexp.Regexp) (int, int) {
-	
+		
 	numMatches := 0
 	scanner := bufio.NewScanner(bytes.NewReader(buffer.Bytes()))
 
+	unmatched := make([]*regexp.Regexp, len(matchers))
+	copy(unmatched, matchers)
+
 	for scanner.Scan() {
 		line := scanner.Text()
-		for i, m := range matchers {
+		for i, m := range unmatched {
 			if m.MatchString(line) { 
 				numMatches++
-				matchers = append(matchers[:i], matchers[i+1:]...)
+				unmatched = append(unmatched[:i], unmatched[i+1:]...)
 				break
 			}
 		}
 		fmt.Printf("Match test count: %s <= %d\n", line, numMatches)
 	}
-	return numMatches, len(matchers)
+	return numMatches, len(unmatched)
 }
