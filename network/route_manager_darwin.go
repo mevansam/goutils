@@ -4,6 +4,7 @@ package network
 
 import (
 	"net"
+	"net/netip"
 	"strings"
 
 	"github.com/mevansam/goutils/logger"
@@ -188,6 +189,14 @@ func addDefaultRoute(gateway string) error {
 	return nil
 }
 
+func (i *routableInterface) ForwardPortTo(srcPort int, dstPort int, dstIP netip.Addr) error {
+	return nil
+}
+
+func (i *routableInterface) DeletePortForwardedTo(srcPort int, dstPort int, dstIP netip.Addr) error {
+	return nil
+}
+
 func (i *routableInterface) FowardTrafficFrom(srcItf RoutableInterface, srcNetwork, destNetworks string, nat bool) error {
 	// NAT packets from src to network this itf is connected
 	// https://gist.github.com/ozel/93c48ff291b83ac648278f0562167b7e
@@ -195,6 +204,6 @@ func (i *routableInterface) FowardTrafficFrom(srcItf RoutableInterface, srcNetwo
 	return nil
 }
 
-func (i *routableInterface) DeleteTrafficFowarding(srcItf RoutableInterface, srcNetwork, destNetwork string) error {
+func (i *routableInterface) DeleteTrafficForwardedFrom(srcItf RoutableInterface, srcNetwork, destNetwork string) error {
 	return nil
 }

@@ -53,11 +53,19 @@ func (i *routableInterface) MakeDefaultRoute() error {
 	return nil
 }
 
+func (i *routableInterface) ForwardPortTo(srcPort int, dstPort int, dstIP netip.Addr) error {
+	return nil
+}
+
+func (i *routableInterface) DeletePortForwardedTo(srcPort int, dstPort int, dstIP netip.Addr) error {
+	return nil
+}
+
 func (i *routableInterface) FowardTrafficFrom(srcItf RoutableInterface, srcNetwork, destNetworks string, nat bool) error {
 	// NAT packets from src to network this itf is connected
 	return nil
 }
 
-func (i *routableInterface) DeleteTrafficFowarding(srcItf RoutableInterface, srcNetwork, destNetwork string) error {
+func (i *routableInterface) DeleteTrafficForwardedFrom(srcItf RoutableInterface, srcNetwork, destNetwork string) error {
 	return nil
 }

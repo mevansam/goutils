@@ -1,5 +1,7 @@
 package network
 
+import "net/netip"
+
 type NetworkContext interface {	
 	DefaultDeviceName() string
 	DefaultInterface() string
@@ -27,6 +29,11 @@ type RouteManager interface {
 	NewRoutableInterface(ifaceName, tunAddress string) (RoutableInterface, error)
 	AddExternalRouteToIPs(ips []string) error
 	AddDefaultRoute(gateway string) error
+
+	// BlackListIPs(ips []netip.Addr) error
+	// DeleteBlackListedIPs(ips []netip.Addr) error
+	// WhiteListIPs(ips []netip.Addr) error
+	// DeleteWhiteListedIPs(ips []netip.Addr) error
 	
 	Clear()
 }
@@ -35,6 +42,15 @@ type RoutableInterface interface {
 	Address4() (string, string, error)
 	Address6() (string, string, error)
 	MakeDefaultRoute() error
-	FowardTrafficFrom(srcItf RoutableInterface, srcNetwork, destNetwork string, nat bool) error
-	DeleteTrafficFowarding(srcItf RoutableInterface, srcNetwork, destNetwork string) error
+
+	// SetSecurityGroups() error
+	// DeleteSecurityGroups() error
+
+	ForwardPortTo(srcPort int, dstPort int, dstIP netip.Addr) error
+	DeletePortForwardedTo(srcPort int, dstPort int, dstIP netip.Addr) error
+
+	FowardTrafficTo(dstItf RoutableInterface, srcNetwork, dstNetwork string, nat bool) error
+	DeleteTrafficForwardedTo(dstItf RoutableInterface, srcNetwork, dstNetwork string, nat bool) error
+	FowardTrafficFrom(srcItf RoutableInterface, srcNetwork, dstNetwork string, nat bool) error
+	DeleteTrafficForwardedFrom(srcItf RoutableInterface, srcNetwork, destNetwork string) error
 }
