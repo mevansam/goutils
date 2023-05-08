@@ -319,6 +319,14 @@ func (i *routableInterface) MakeDefaultRoute() error {
 	})
 }
 
+func (i *routableInterface) ForwardPortTo(srcPort int, dstPort int, dstIP netip.Addr) error {
+	return nil
+}
+
+func (i *routableInterface) DeletePortForwardedTo(srcPort int, dstPort int, dstIP netip.Addr) error {
+	return nil
+}
+
 func (i *routableInterface) FowardTrafficFrom(srcItf RoutableInterface, srcNetwork, dstNetwork string, withNat bool) error {
 
 	var (
@@ -493,33 +501,14 @@ func (i *routableInterface) FowardTrafficFrom(srcItf RoutableInterface, srcNetwo
 	return err
 }
 
-func (i *routableInterface) DeleteTrafficFowarding(srcItf RoutableInterface, srcNetwork, dstNetwork string) error {
+func (i *routableInterface) DeleteTrafficForwardedFrom(srcItf RoutableInterface, srcNetwork, dstNetwork string) error {
 	
-	var (
-		err error
-		ok  bool
-
-		forwardRule, natRule *nftables.Rule
-	)
 	srcRitf := srcItf.(*routableInterface)
-
-	iritfName := srcRitf.link.Attrs().Name
-	oritfName := i.link.Attrs().Name
-	ruleKey := iritfName+">"+oritfName+":"+srcNetwork+":"+dstNetwork
-	if forwardRule, ok = router.forwardRuleMap[ruleKey]; ok {
-		if err = router.nft.DelRule(forwardRule); err != nil {
-			return err
-		}
-		delete(router.forwardRuleMap, ruleKey)
-	}
-	if natRule, ok = router.natRuleMap[ruleKey]; ok {
-		if err = router.nft.DelRule(natRule); err != nil {
-			return err
-		}
-		delete(router.natRuleMap, ruleKey)
-	}
-
-	return router.nft.Flush()
+	return deleteRule(
+		srcRitf.link.Attrs().Name + 
+		">" + i.link.Attrs().Name + 
+		":" + srcNetwork +
+		":" + dstNetwork)
 }
 
 // helper functions
@@ -601,6 +590,36 @@ func loadSavedRule(rule *nftables.Rule, is4 bool) (*nftables.Rule, error) {
 	}	
 }
 
+func deleteRule(ruleKey string) error {
+
+	var (
+		err       error
+		ok, flush bool
+
+		forwardRule, natRule *nftables.Rule
+	)
+
+	if forwardRule, ok = router.forwardRuleMap[ruleKey]; ok {
+		if err = router.nft.DelRule(forwardRule); err != nil {
+			return err
+		}
+		delete(router.forwardRuleMap, ruleKey)
+		flush = true
+	}
+	if natRule, ok = router.natRuleMap[ruleKey]; ok {
+		if err = router.nft.DelRule(natRule); err != nil {
+			return err
+		}
+		delete(router.natRuleMap, ruleKey)
+		flush = true
+	}
+	if flush {
+		return router.nft.Flush()
+	} else {
+		return nil
+	}
+}
+
 // packetFilterRouter functions
 
 func (r *packetFilterRouter) getTables(isIPv4 bool) (*nftables.Table, *nftables.Chain, *nftables.Chain, error) {
@@ -620,6 +639,7 @@ func (r *packetFilterRouter) getTables(isIPv4 bool) (*nftables.Table, *nftables.
 			Name:   "mycs_router_ipv6",
 		})
 
+		r.input = make([]*nftables.Chain, 2)
 		r.forward = make([]*nftables.Chain, 2)
 		r.nat = make([]*nftables.Chain, 2)
 
@@ -629,13 +649,61 @@ func (r *packetFilterRouter) getTables(isIPv4 bool) (*nftables.Table, *nftables.
 		}
 
 		for i, table := range r.table {
-			r.forward[i] = router.nft.AddChain(&nftables.Chain{
+
+			// map ctstate { 
+			//   type ct_state : verdict
+			//   elements = { invalid : drop, established : accept, related : accept }
+			// }
+			ctstateVmap := &nftables.Set{
+				Name:     "ctstate",
+				Table:    table,
+				IsMap:    true,
+				KeyType:  nftables.TypeCTState,
+				DataType: nftables.TypeVerdict,
+			}
+			if err = router.nft.AddSet(ctstateVmap,
+				[]nftables.SetElement{
+					{
+						Key:         binaryutil.NativeEndian.PutUint32(expr.CtStateBitINVALID),
+						VerdictData: &expr.Verdict{ Kind: expr.VerdictDrop },	
+					},
+					{
+						Key:         binaryutil.NativeEndian.PutUint32(expr.CtStateBitESTABLISHED),
+						VerdictData: &expr.Verdict{ Kind: expr.VerdictAccept },	
+					},
+					{
+						Key:         binaryutil.NativeEndian.PutUint32(expr.CtStateBitRELATED),
+						VerdictData: &expr.Verdict{ Kind: expr.VerdictAccept },	
+					},
+				},
+			); err != nil {
+				return nil, nil, nil, err
+			}
+			ctstateExpr := []expr.Any{
+				// [ ct load status => reg 1 ]
+				&expr.Ct{
+					Register:       1,
+					SourceRegister: false,
+					Key:            expr.CtKeySTATE,
+				},
+				// [ lookup reg 1 map ctstateVmap ]
+				&expr.Lookup{
+					SourceRegister: 1,
+					SetName:        ctstateVmap.Name,
+					SetID:          ctstateVmap.ID,
+					DestRegister:   0,
+					IsDestRegSet:   true,
+				},			
+			}
+			
+			// chains
+			r.input[i] = router.nft.AddChain(&nftables.Chain{
 				Name:     "input",
 				Table:    table,
 				Hooknum:  nftables.ChainHookInput,
 				Priority: nftables.ChainPriorityFilter,
 				Type:     nftables.ChainTypeFilter,
-				Policy:   chainPolicyRef(nftables.ChainPolicyAccept),
+				Policy:   chainPolicyRef(nftables.ChainPolicyDrop),
 			})
 			r.forward[i] = router.nft.AddChain(&nftables.Chain{
 				Name:     "forward",
@@ -653,69 +721,42 @@ func (r *packetFilterRouter) getTables(isIPv4 bool) (*nftables.Table, *nftables.
 				Type:     nftables.ChainTypeNAT,
 				Policy:   chainPolicyRef(nftables.ChainPolicyAccept),
 			})
+
+			// chain input
+			//
+			// ct state vmap @ctstate
 			router.nft.AddRule(&nftables.Rule{
 				Table: table,
-				Chain: r.forward[i],
-				// ct state invalid drop
-				Exprs: []expr.Any{
-					// [ ct load status => reg 1 ]
-					&expr.Ct{
-						Register:       1,
-						SourceRegister: false,
-						Key:            expr.CtKeySTATE,
-					},
-					// [ bitwise reg 1 = (reg=1 & invalid ) ^ 0x00000000 ]
-					&expr.Bitwise{
-						SourceRegister: 1,
-						DestRegister:   1,
-						Len:            4,
-						Mask:           binaryutil.NativeEndian.PutUint32(expr.CtStateBitINVALID),
-						Xor:            binaryutil.NativeEndian.PutUint32(0),
-					},
-					// [ cmp neq reg 1 0x00000000 ]
-					&expr.Cmp{
-						Op:       expr.CmpOpNeq,
-						Register: 1,
-						Data:     binaryutil.NativeEndian.PutUint32(0),
-					},
-					//[ immediate reg 0 accept ]
-					&expr.Verdict{
-						Kind: expr.VerdictDrop,
-					},
-				},
+				Chain: r.input[i],
+				Exprs: ctstateExpr,
 			})
+			// iifname "lo" accept
 			router.nft.AddRule(&nftables.Rule{
 				Table: table,
-				Chain: r.forward[i],
-				// ct state established,related accept
+				Chain: r.input[i],
 				Exprs: []expr.Any{
-					// [ ct load status => reg 1 ]
-					&expr.Ct{
-						Register:       1,
-						SourceRegister: false,
-						Key:            expr.CtKeySTATE,
-					},
-					// [ bitwise reg 1 = (reg=1 & (established | related) ) ^ 0x00000000 ]
-					&expr.Bitwise{
-						SourceRegister: 1,
-						DestRegister:   1,
-						Len:            4,
-						Mask:           binaryutil.NativeEndian.PutUint32(
-															expr.CtStateBitESTABLISHED | expr.CtStateBitRELATED,
-														),
-						Xor:            binaryutil.NativeEndian.PutUint32(0),
-					},
-					// [ cmp neq reg 1 0x00000000 ]
+					// [ meta load iifname => reg 1 ]
+					&expr.Meta{Key: expr.MetaKeyIIFNAME, Register: 1},
+					// [ cmp eq reg 1 <iifname> ]
 					&expr.Cmp{
-						Op:       expr.CmpOpNeq,
+						Op:       expr.CmpOpEq,
 						Register: 1,
-						Data:     binaryutil.NativeEndian.PutUint32(0),
+						Data:     []byte("lo"+"\x00"),
 					},
 					//[ immediate reg 0 accept ]
 					&expr.Verdict{
 						Kind: expr.VerdictAccept,
 					},
 				},
+			})
+
+			// chain forward
+			//
+			// ct state vmap @ctstate
+			router.nft.AddRule(&nftables.Rule{
+				Table: table,
+				Chain: r.forward[i],
+				Exprs: ctstateExpr,
 			})
 		}
 		err = router.nft.Flush()

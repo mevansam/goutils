@@ -205,7 +205,7 @@ var _ = Describe("Route Manager", func() {
 	
 			fmt.Printf("\n# nft list ruleset - forward rules after config\n")
 			matched, unmatched := outputMatcher(outputBuffer, forwardRuleMatches)
-			Expect(matched).To(Equal(6))
+			Expect(matched).To(Equal(5))
 			Expect(unmatched).To(Equal(0))
 
 			outputBuffer.Reset()
@@ -223,7 +223,7 @@ var _ = Describe("Route Manager", func() {
 			time.Sleep(time.Second * 15) // increase to pause for manual validation
 
 			// delete forwarding rules
-			err = ritf1.DeleteTrafficFowarding(ritf3, network.LAN4, "8.8.8.8/32")
+			err = ritf1.DeleteTrafficForwardedFrom(ritf3, network.LAN4, "8.8.8.8/32")
 			Expect(err).ToNot(HaveOccurred())
 
 			outputBuffer.Reset()
@@ -235,7 +235,7 @@ var _ = Describe("Route Manager", func() {
 
 			fmt.Printf("\n# nft list ruleset - forward rules after deletion of rule\n")
 			matched, unmatched = outputMatcher(outputBuffer, forwardRuleMatches)
-			Expect(matched).To(Equal(5))
+			Expect(matched).To(Equal(4))
 			Expect(unmatched).To(Equal(1))
 
 			outputBuffer.Reset()
@@ -256,8 +256,7 @@ var _ = Describe("Route Manager", func() {
 })
 
 var forwardRuleMatches = []*regexp.Regexp{
-	regexp.MustCompile(`^\s+ct state invalid drop\s*$`),
-	regexp.MustCompile(`^\s+ct state established,related accept\s*$`),
+	regexp.MustCompile(`^\s+ct state vmap @ctstate\s*$`),
 	// routing between lan1 to lan2
 	regexp.MustCompile(`^\s+iifname "eth1" oifname "eth2" ip saddr 192.168.10.0-192.168.10.255 ip daddr 192.168.11.0-192.168.11.255 accept\s*$`),
 	regexp.MustCompile(`^\s+iifname "eth2" oifname "eth1" ip saddr 192.168.11.0-192.168.11.255 ip daddr 192.168.10.0-192.168.10.255 accept\s*$`),
