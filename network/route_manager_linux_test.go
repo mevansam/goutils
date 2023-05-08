@@ -211,7 +211,7 @@ var _ = Describe("Route Manager", func() {
 			outputBuffer.Reset()
 			err = run.RunAsAdminWithArgs([]string{ 
 				"/bin/sh", "-c", 
-				"nft list ruleset | sed -n '/^table ip mycs_router_ipv4 {/,/^}/p' | sed -n '/chain nat {/,/}/p'",
+				"nft list ruleset | sed -n '/^table ip mycs_router_ipv4 {/,/^}/p' | sed -n '/chain nat_postrouting {/,/}/p'",
 			}, &outputBuffer, &outputBuffer)
 			Expect(err).ToNot(HaveOccurred())
 
@@ -241,7 +241,7 @@ var _ = Describe("Route Manager", func() {
 			outputBuffer.Reset()
 			err = run.RunAsAdminWithArgs([]string{ 
 				"/bin/sh", "-c", 
-				"nft list ruleset | sed -n '/^table ip mycs_router_ipv4 {/,/^}/p' | sed -n '/chain nat {/,/}/p'",
+				"nft list ruleset | sed -n '/^table ip mycs_router_ipv4 {/,/^}/p' | sed -n '/chain nat_postrouting {/,/}/p'",
 			}, &outputBuffer, &outputBuffer)
 			Expect(err).ToNot(HaveOccurred())
 

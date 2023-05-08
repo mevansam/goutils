@@ -32,7 +32,8 @@ type packetFilterRouter struct {
 	table   []*nftables.Table
 	input   []*nftables.Chain
 	forward []*nftables.Chain
-	nat     []*nftables.Chain
+	natPre  []*nftables.Chain
+	natPost []*nftables.Chain
 
 	forwardRuleMap map[string]*nftables.Rule
 	natRuleMap map[string]*nftables.Rule
@@ -320,6 +321,21 @@ func (i *routableInterface) MakeDefaultRoute() error {
 }
 
 func (i *routableInterface) ForwardPortTo(srcPort int, dstPort int, dstIP netip.Addr) error {
+
+	// var (
+	// 	err error
+		
+	// 	table        *nftables.Table
+	// 	forward, nat *nftables.Chain
+	// }
+
+	// is4 := srcNetworkPrefix.Addr().Is4()
+	// addrLen, srcOffset, destOffset := ipHeaderOffsets(is4)
+
+	// if table, forward, nat, err = router.getTables(is4); err != nil {
+	// 	return err
+	// }
+
 	return nil
 }
 
@@ -336,7 +352,7 @@ func (i *routableInterface) FowardTrafficFrom(srcItf RoutableInterface, srcNetwo
 		dstNetworkPrefix netip.Prefix
 
 		table                *nftables.Table
-		forward, nat         *nftables.Chain		
+		forward, natPost     *nftables.Chain
 		forwardRule, natRule *nftables.Rule
 	)
 	srcRitf := srcItf.(*routableInterface)
@@ -364,7 +380,7 @@ func (i *routableInterface) FowardTrafficFrom(srcItf RoutableInterface, srcNetwo
 	is4 := srcNetworkPrefix.Addr().Is4()
 	addrLen, srcOffset, destOffset := ipHeaderOffsets(is4)
 
-	if table, forward, nat, err = router.getTables(is4); err != nil {
+	if table, forward, _, natPost, err = router.getTables(is4); err != nil {
 		return err
 	}
 
@@ -450,7 +466,7 @@ func (i *routableInterface) FowardTrafficFrom(srcItf RoutableInterface, srcNetwo
 	if withNat {
 		natRule = &nftables.Rule{
 			Table: table,
-			Chain: nat,
+			Chain: natPost,
 		}
 		natRule.Exprs = append(
 			// oifname "i" ip saddr <srcNetwork> ip daddr <dstNetwork> masquerade
@@ -622,7 +638,7 @@ func deleteRule(ruleKey string) error {
 
 // packetFilterRouter functions
 
-func (r *packetFilterRouter) getTables(isIPv4 bool) (*nftables.Table, *nftables.Chain, *nftables.Chain, error) {
+func (r *packetFilterRouter) getTables(isIPv4 bool) (*nftables.Table, *nftables.Chain, *nftables.Chain, *nftables.Chain, error) {
 
 	var (
 		err error
@@ -641,7 +657,8 @@ func (r *packetFilterRouter) getTables(isIPv4 bool) (*nftables.Table, *nftables.
 
 		r.input = make([]*nftables.Chain, 2)
 		r.forward = make([]*nftables.Chain, 2)
-		r.nat = make([]*nftables.Chain, 2)
+		r.natPre = make([]*nftables.Chain, 2)
+		r.natPost = make([]*nftables.Chain, 2)
 
 		// NOTE: policy ref for policy constants missing in nftables package
 		var chainPolicyRef = func (p nftables.ChainPolicy) *nftables.ChainPolicy {
@@ -677,7 +694,7 @@ func (r *packetFilterRouter) getTables(isIPv4 bool) (*nftables.Table, *nftables.
 					},
 				},
 			); err != nil {
-				return nil, nil, nil, err
+				return nil, nil, nil, nil, err
 			}
 			ctstateExpr := []expr.Any{
 				// [ ct load status => reg 1 ]
@@ -713,8 +730,16 @@ func (r *packetFilterRouter) getTables(isIPv4 bool) (*nftables.Table, *nftables.
 				Type:     nftables.ChainTypeFilter,
 				Policy:   chainPolicyRef(nftables.ChainPolicyDrop),
 			})
-			r.nat[i] = router.nft.AddChain(&nftables.Chain{
-				Name:     "nat",
+			r.natPre[i] = router.nft.AddChain(&nftables.Chain{
+				Name:     "nat_prerouting",
+				Table:    table,
+				Hooknum:  nftables.ChainHookPrerouting,
+				Priority: nftables.ChainPriorityNATDest,
+				Type:     nftables.ChainTypeNAT,
+				Policy:   chainPolicyRef(nftables.ChainPolicyAccept),
+			})
+			r.natPost[i] = router.nft.AddChain(&nftables.Chain{
+				Name:     "nat_postrouting",
 				Table:    table,
 				Hooknum:  nftables.ChainHookPostrouting,
 				Priority: nftables.ChainPriorityNATSource,
@@ -762,9 +787,9 @@ func (r *packetFilterRouter) getTables(isIPv4 bool) (*nftables.Table, *nftables.
 		err = router.nft.Flush()
 	}
 	if isIPv4 {
-		return r.table[0], r.forward[0], r.nat[0], err
+		return r.table[0], r.forward[0], r.natPre[0], r.natPost[0], err
 	} else {
-		return r.table[1], r.forward[1], r.nat[1], err
+		return r.table[1], r.forward[1], r.natPre[1], r.natPost[1], err
 	}
 }
 
@@ -783,6 +808,7 @@ func (r *packetFilterRouter) reset() {
 
 		r.table = nil
 		r.forward = nil
-		r.nat = nil
+		r.natPre = nil
+		r.natPost = nil
 	}
 }
