@@ -1,0 +1,1202 @@
+//go:build linux
+
+package network
+
+import (
+	"bytes"
+	"encoding/hex"
+	"fmt"
+	"hash"
+	"io"
+	"net/netip"
+
+	"github.com/google/nftables"
+	"github.com/google/nftables/binaryutil"
+	"github.com/google/nftables/expr"
+	"github.com/minio/highwayhash"
+	"go4.org/netipx"
+	"golang.org/x/sys/unix"
+
+	"github.com/mevansam/goutils/logger"
+)
+
+type packetFilterRouter struct {
+	nft nftables.Conn
+
+	table  []*nftables.Table
+	chains [][]*nftables.Chain
+
+	inboundIFNameVmap []*nftables.Set
+	inboundChains map[string][]*nftables.Chain
+
+	sgsPortVmaps map[string]*nftables.Set
+
+	setMap  map[string]*nftables.Set
+	ruleMap map[string][]*nftables.Rule
+}
+
+const (
+	filterInput   = 0
+	filterForward = 1
+	filterOutput  = 2
+	natPreRoute   = 3
+	natPostRoute  = 4
+)
+
+var hashKey []byte
+
+var keyEnd = []byte{ 0xff, 0xff }
+
+func init() {
+	// initialize hash key to a value
+	// which will always be the same
+	hashKey = make([]byte, 32)
+	for i := 0; i < 32; i++ {
+    hashKey[i] = byte(i*8)
+	}
+}
+
+func (m *routeManager) NewFilterRouter(denyAll bool) (FilterRouter, error) {
+
+	var (
+		err error
+
+		fwPolicy *nftables.ChainPolicy
+	)
+
+	r := &packetFilterRouter{
+		table  : make([]*nftables.Table, 2),
+		chains : make([][]*nftables.Chain, 2),
+
+		inboundIFNameVmap : make([]*nftables.Set, 2),
+		inboundChains     : make(map[string][]*nftables.Chain),
+		sgsPortVmaps      : make(map[string]*nftables.Set),
+
+		ruleMap : make(map[string][]*nftables.Rule),
+	}
+
+	r.table[0] = r.nft.AddTable(&nftables.Table{
+		Family: nftables.TableFamilyIPv4,
+		Name:   "mycs_router_ipv4",
+	})
+	r.table[1] = r.nft.AddTable(&nftables.Table{
+		Family: nftables.TableFamilyIPv6,
+		Name:   "mycs_router_ipv6",
+	})
+	r.chains[0] = make([]*nftables.Chain, 5)
+	r.chains[1] = make([]*nftables.Chain, 5)
+
+	// NOTE: policy ref for policy constants missing in nftables package
+	var chainPolicyRef = func (p nftables.ChainPolicy) *nftables.ChainPolicy {
+		return &p
+	}
+	if denyAll {
+		fwPolicy = chainPolicyRef(nftables.ChainPolicyDrop)
+	} else {
+		fwPolicy = chainPolicyRef(nftables.ChainPolicyAccept)
+	}
+
+	for i, table := range r.table {
+
+		// map ctstate {
+		//   type ct_state : verdict
+		//   elements = { invalid : drop, established : accept, related : accept }
+		// }
+		ctstateVmap := &nftables.Set{
+			Name:     "ctstate",
+			Table:    table,
+			IsMap:    true,
+			KeyType:  nftables.TypeCTState,
+			DataType: nftables.TypeVerdict,
+		}
+		if err = r.nft.AddSet(ctstateVmap,
+			[]nftables.SetElement{
+				{
+					Key:         binaryutil.NativeEndian.PutUint32(expr.CtStateBitINVALID),
+					VerdictData: &expr.Verdict{ Kind: expr.VerdictDrop },
+				},
+				{
+					Key:         binaryutil.NativeEndian.PutUint32(expr.CtStateBitESTABLISHED),
+					VerdictData: &expr.Verdict{ Kind: expr.VerdictAccept },
+				},
+				{
+					Key:         binaryutil.NativeEndian.PutUint32(expr.CtStateBitRELATED),
+					VerdictData: &expr.Verdict{ Kind: expr.VerdictAccept },
+				},
+			},
+		); err != nil {
+			return nil, err
+		}
+		ctstateExpr := []expr.Any{
+			// [ ct load status => reg 1 ]
+			&expr.Ct{
+				Register:       1,
+				SourceRegister: false,
+				Key:            expr.CtKeySTATE,
+			},
+			// [ lookup reg 1 map ctstateVmap ]
+			&expr.Lookup{
+				SourceRegister: 1,
+				SetName:        ctstateVmap.Name,
+				SetID:          ctstateVmap.ID,
+				DestRegister:   0,
+				IsDestRegSet:   true,
+			},
+		}
+
+		// map inbound_ifname {
+		//   type iifname : verdict
+		//   elements = { "lo" : accept }
+		// }
+		//
+		// NOTE: there appears to be an issue when
+		//       iifname verdict map is created using
+		//       the nftables library where the key
+		//       is not being echoed when rules are
+		//       listed via the cli. however, the
+		//       settings seem to take effect and
+		//       behave as expected.
+		//
+		r.inboundIFNameVmap[i] = &nftables.Set{
+			Name:     "inbound_ifname",
+			Table:    table,
+			IsMap:    true,
+			KeyType:  nftables.TypeIFName,
+			DataType: nftables.TypeVerdict,
+		}
+		if err = r.nft.AddSet(r.inboundIFNameVmap[i],
+			// ensure loop back traffic is allowed
+			[]nftables.SetElement{
+				{
+					Key:         byteString("lo", 16),
+					VerdictData: &expr.Verdict{ Kind: expr.VerdictAccept },
+				},
+			},
+		); err != nil {
+			return nil, err
+		}
+		inboundIFNameExpr := []expr.Any{
+			// [ meta load iifname => reg 1 ]
+			&expr.Meta{Key: expr.MetaKeyIIFNAME, Register: 1},
+			// [ lookup reg 1 map inboundIFNameVmap ]
+			&expr.Lookup{
+				SourceRegister: 1,
+				SetName:        r.inboundIFNameVmap[i].Name,
+				SetID:          r.inboundIFNameVmap[i].ID,
+				DestRegister:   0,
+				IsDestRegSet:   true,
+			},
+		}
+
+		// chains
+		r.chains[i][filterInput] = r.nft.AddChain(&nftables.Chain{
+			Name:     "input",
+			Table:    table,
+			Hooknum:  nftables.ChainHookInput,
+			Priority: nftables.ChainPriorityFilter,
+			Type:     nftables.ChainTypeFilter,
+			Policy:   fwPolicy,
+		})
+		r.chains[i][filterForward] = r.nft.AddChain(&nftables.Chain{
+			Name:     "forward",
+			Table:    table,
+			Hooknum:  nftables.ChainHookForward,
+			Priority: nftables.ChainPriorityFilter,
+			Type:     nftables.ChainTypeFilter,
+			Policy:   fwPolicy,
+		})
+		r.chains[i][filterOutput] = r.nft.AddChain(&nftables.Chain{
+			Name:     "output",
+			Table:    table,
+			Hooknum:  nftables.ChainHookOutput,
+			Priority: nftables.ChainPriorityFilter,
+			Type:     nftables.ChainTypeFilter,
+			Policy:   chainPolicyRef(nftables.ChainPolicyAccept),
+		})
+		r.chains[i][natPreRoute] = r.nft.AddChain(&nftables.Chain{
+			Name:     "nat_prerouting",
+			Table:    table,
+			Hooknum:  nftables.ChainHookPrerouting,
+			Priority: nftables.ChainPriorityNATDest,
+			Type:     nftables.ChainTypeNAT,
+			Policy:   chainPolicyRef(nftables.ChainPolicyAccept),
+		})
+		r.chains[i][natPostRoute] = r.nft.AddChain(&nftables.Chain{
+			Name:     "nat_postrouting",
+			Table:    table,
+			Hooknum:  nftables.ChainHookPostrouting,
+			Priority: nftables.ChainPriorityNATSource,
+			Type:     nftables.ChainTypeNAT,
+			Policy:   chainPolicyRef(nftables.ChainPolicyAccept),
+		})
+
+		// chain input
+		//
+		// ct state vmap @ctstate
+		r.nft.AddRule(&nftables.Rule{
+			Table: table,
+			Chain: r.chains[i][filterInput],
+			Exprs: ctstateExpr,
+		})
+		// iifname vmap @inbound_ifname
+		r.nft.AddRule(&nftables.Rule{
+			Table: table,
+			Chain: r.chains[i][filterInput],
+			Exprs: inboundIFNameExpr,
+		})
+
+		// chain forward
+		//
+		// ct state vmap @ctstate
+		r.nft.AddRule(&nftables.Rule{
+			Table: table,
+			Chain: r.chains[i][filterForward],
+			Exprs: ctstateExpr,
+		})
+	}
+
+	if err = r.nft.Flush(); err != nil {
+		return nil, err
+	}
+	m.pfr = r
+	return m.pfr, nil
+}
+
+func (r *packetFilterRouter) getTable(
+	isIPv4 bool,
+) (
+	*nftables.Table,
+	[]*nftables.Chain,
+	error,
+) {
+
+	if r.table == nil {
+		return nil, nil,
+			fmt.Errorf("packet filter router has not been initialized")
+	}
+	if isIPv4 {
+		return r.table[0], r.chains[0], nil
+	} else {
+		return r.table[1], r.chains[1], nil
+	}
+}
+
+func (r *packetFilterRouter) getChain(chain int) []*nftables.Chain {
+	return []*nftables.Chain{ r.chains[0][chain], r.chains[1][chain] }
+}
+
+func (r *packetFilterRouter) getInboundChain(ifname string) ([]*nftables.Chain, error) {
+
+	var (
+		err error
+		ok  bool
+
+		inboundChain []*nftables.Chain
+	)
+
+	chainName := "inbound_"+ifname
+	if inboundChain, ok = r.inboundChains[chainName]; !ok {
+
+		logger.TraceMessage("packetFilterRouter.getInboundChain(): Creating inbound chain '%s' and adding jump condition.", chainName)
+
+		inboundChain = make([]*nftables.Chain, len(r.table))
+		for i, table := range r.table {
+			inboundChain[i] = r.nft.AddChain(&nftables.Chain{
+				Name:  chainName,
+				Table: table,
+			})
+			if err = r.nft.SetAddElements(r.inboundIFNameVmap[i],
+				[]nftables.SetElement{
+					{
+						Key:         byteString(ifname, 16),
+						VerdictData: &expr.Verdict{
+							Kind: expr.VerdictJump,
+							Chain: chainName,
+						},
+					},
+				},
+			); err != nil {
+				return nil, err
+			}
+		}
+		r.inboundChains[chainName] = inboundChain
+	}
+	return inboundChain, nil
+}
+
+func (r *packetFilterRouter) BlackListIPs(ips []netip.Addr) (string, error) {
+	return "", nil
+}
+
+func (r *packetFilterRouter) DeleteBlackListIPs(ips []netip.Addr) error {
+	return nil
+}
+
+func (r *packetFilterRouter) WhiteListIPs(ips []netip.Addr) (string, error) {
+	return "", nil
+}
+
+func (r *packetFilterRouter) DeleteWhiteListIPs(ips []netip.Addr) error {
+	return nil
+}
+
+func (r *packetFilterRouter) SetSecurityGroups(iifName string, sgs []SecurityGroup) error {
+
+	// chain inbound_<itf_name>
+	//
+	// sgsPortVmaps =>
+	//
+	// map sgs_<itf_name> {
+	//   type proto . dport : verdict
+	// }
+	// map sgs_<itf_name>_<src_network> {
+	//   type proto . dport : verdict
+	// }
+	// map sgs_<itf_name>_<dst_network>_<src_network> {
+	//   type proto . dport : verdict
+	// }
+
+	// chain forward
+	//
+	// sgsPortVmaps =>
+	//
+	// map sgs_<src_network> {
+	//   type proto . dport : verdict
+	// }
+	//
+	// map sgs_<dst_network> {
+	//   type proto . dport : verdict
+	// }
+	//
+	// map sgs_<dst_network>_<src_network> {
+	//   type proto . dport : verdict
+	// }
+
+	var (
+		err error
+		ok  bool
+
+		hash hash.Hash
+
+		keyType     nftables.SetDatatype
+		sgsPortVmap *nftables.Set
+
+		rules []*nftables.Rule
+
+		addICMPRule, addPortVmapRule bool
+	)
+
+	for _, sg := range sgs {
+
+		// validate sg
+		if len(iifName) == 0 && !sg.SrcNetwork.IsValid() && !sg.DstNetwork.IsValid(){
+			logger.ErrorMessage("At least one of IifName, SrcNetwork or DstNetwork must be set for a security group: %# v", sg)
+			continue
+		}
+		if sg.SrcNetwork.IsValid() && sg.DstNetwork.IsValid() && sg.SrcNetwork.Addr().Is4() != sg.DstNetwork.Addr().Is4() {
+			logger.ErrorMessage("Cannot mix ipv4 and ipv6 types for SrcNetwork and DstNetwork: %# v", sg)
+			continue
+		}
+
+		logger.TraceMessage("packetFilterRouter.SetSecurityGroups(): Applying security group: %# v", sg)
+
+		addToChain := []bool{ true, true } // apply rules to both ip4 and ipv6 chains
+		sgKey := "sgs_"
+		sgExprsPre := []expr.Any{}
+		targetChain := r.getChain(filterForward)
+
+		if len(iifName) > 0 {
+			sgKey += iifName
+
+			if !sg.DstNetwork.IsValid() {
+				// if interface name is set and no dst network then
+				// sg filter will be added to the inbound chain for
+				// that interface
+				if targetChain, err = r.getInboundChain(iifName); err != nil {
+					logger.ErrorMessage("Failed to get/create inbound chain for interface '%s': %s", iifName, err.Error())
+					continue
+				}
+
+			} else {
+				sgExprsPre = append(sgExprsPre,
+					// [ meta load iifname => reg 1 ]
+					&expr.Meta{Key: expr.MetaKeyIIFNAME, Register: 1},
+					// [ cmp eq reg 1 <iifname> ]
+					&expr.Cmp{
+						Op:       expr.CmpOpEq,
+						Register: 1,
+						Data:     []byte(iifName+"\x00"),
+					},
+				)
+			}
+
+		} else if !sg.DstNetwork.IsValid() {
+			// no dst network so add filter to the input chain
+			targetChain = r.getChain(filterInput)
+		}
+		if sg.SrcNetwork.IsValid() || sg.DstNetwork.IsValid() {
+			addToChain[0] = sg.SrcNetwork.Addr().Is4() || sg.DstNetwork.Addr().Is4() // apply rules only to ip4 chain
+			addToChain[1] = sg.SrcNetwork.Addr().Is6() || sg.DstNetwork.Addr().Is6() // apply rules only to ip6 chain
+		}
+
+		// hash the sgs key so we have a fixed
+		// name of fixed length within limits
+		if hash, err = highwayhash.New64(hashKey); err == nil {
+			_, err = io.Copy(hash, bytes.NewBuffer([]byte(sgKey)))
+		}
+		if err != nil {
+			logger.ErrorMessage("Failed to create hash for sgKey '%s': %s", sgKey, err.Error())
+			continue
+		}
+		sgsKeyHash := hex.EncodeToString(hash.Sum(nil))
+
+		// For tcp and udp protocols
+		//
+		// iifname <iifName> ip saddr <sg.SrcNetwork> ip daddr <sg.DstNetwork> ip protocol . dport vmap @<sgsPortVmap>
+		//
+		// For icmp protocol
+		//
+		// iifname <iifName> ip saddr <sg.SrcNetwork> ip daddr <sg.DstNetwork> icmp type echo-request accept
+
+		for i, chain := range targetChain {
+			sgExprs := sgExprsPre			
+			vmapName := fmt.Sprintf("sgs_%s_%d", sgsKeyHash, i)
+
+			if addToChain[i] {
+				addrLen, srcOffset, destOffset, protoOffset := ipHeaderOffsets(i == 0)
+
+				if sg.SrcNetwork.IsValid() {
+					sgKey += "_"+sg.SrcNetwork.String()
+					srcNetworkRange := netipx.RangeOfPrefix(sg.SrcNetwork)
+					sgExprs = append(sgExprs,
+						// [ payload load 4b @ network header + 12 (src addr) => reg 1 ]
+						&expr.Payload{
+							DestRegister: 1,
+							Base:         expr.PayloadBaseNetworkHeader,
+							Offset:       srcOffset,
+							Len:          addrLen,
+						},
+						// [ range neq reg 1 <src network min> - <src network max> ]
+						&expr.Range{
+							Op:       expr.CmpOpEq,
+							Register: 1,
+							FromData: srcNetworkRange.From().AsSlice(),
+							ToData:   srcNetworkRange.To().AsSlice(),
+						},
+					)
+				}
+				if sg.DstNetwork.IsValid() {
+					sgKey += "_"+sg.DstNetwork.String()
+					dstNetworkRange := netipx.RangeOfPrefix(sg.DstNetwork)
+					sgExprs = append(sgExprs,
+						// [ payload load 4b @ network header + 16 (dest addr) => reg 1 ]
+						&expr.Payload{
+							DestRegister: 1,
+							Base:         expr.PayloadBaseNetworkHeader,
+							Offset:       destOffset,
+							Len:          addrLen,
+						},
+						// [ range neq reg 1 <src network min> - <src network max> ]
+						&expr.Range{
+							Op:       expr.CmpOpEq,
+							Register: 1,
+							FromData: dstNetworkRange.From().AsSlice(),
+							ToData:   dstNetworkRange.To().AsSlice(),
+						},
+					)
+				}
+
+				// get security group port vmap
+				if sgsPortVmap, ok = r.sgsPortVmaps[vmapName]; !ok {
+
+					if keyType, err = nftables.ConcatSetType(
+						nftables.TypeInetProto,
+						nftables.TypeInetService,
+					); err != nil {
+						logger.ErrorMessage(
+							"Failed to create key type for sgsPortVmap set for sgKey '%s' with name '%s' for table '%s': %s",
+							sgKey, vmapName, chain.Table.Name, err.Error(),
+						)
+						continue
+					}
+					sgsPortVmap = &nftables.Set{
+						Name:          vmapName,
+						Table:         chain.Table,
+						IsMap:         true,
+						KeyType:       keyType,
+						DataType:      nftables.TypeVerdict,
+					}
+					if err = r.nft.AddSet(sgsPortVmap, nil); err != nil {
+						logger.ErrorMessage(
+							"Failed to add sgsPortVmap set for sgKey '%s' with name '%s' for table '%s': %s",
+							sgKey, vmapName, chain.Table.Name, err.Error(),
+						)
+						continue
+					}					
+					r.sgsPortVmaps[vmapName] = sgsPortVmap
+				}
+
+				// add port filter rules to vmap
+				addICMPRule, addPortVmapRule = false, false
+				for _, pg := range sg.Ports {
+					if pg.Proto == ICMP {
+						addICMPRule = true
+
+					} else {
+						addPortVmapRule = true
+
+						for p := pg.FromPort; p <= pg.ToPort; p++ {
+							// key fields should have 4 boundaries
+							//
+							// byte[0..3] => protocol
+							// byte[4..7] => port
+							//
+							keyData := make([]byte, 8)
+							// protocol
+							switch pg.Proto {
+							case ICMP:
+								keyData[0] = unix.IPPROTO_ICMP
+							case TCP:
+								keyData[0] = unix.IPPROTO_TCP
+							case UDP:
+								keyData[0] = unix.IPPROTO_UDP
+							default:
+								logger.ErrorMessage(
+									"Unsupported protocol '%s' for port access rule in map '%s' for sgKey '%s' for table '%s': %s",
+									string(pg.Proto), vmapName, sgKey, chain.Table.Name, err.Error(),
+								)
+								continue
+							}
+							// destination port
+							copy(keyData[4:], binaryutil.BigEndian.PutUint16(uint16(p)))
+						
+							if sg.Deny {
+								err = r.nft.SetAddElements(sgsPortVmap,
+									[]nftables.SetElement{
+										{
+											Key:         keyData,
+											VerdictData: &expr.Verdict{ Kind: expr.VerdictDrop },
+										},
+									},
+								)
+							} else {
+								err = r.nft.SetAddElements(sgsPortVmap,
+									[]nftables.SetElement{
+										{
+											Key:         keyData,
+											VerdictData: &expr.Verdict{ Kind: expr.VerdictAccept },
+										},
+									},
+								)
+							}
+							if err != nil {
+								logger.ErrorMessage(
+									"Failed to add port access rule in map '%s' for sgKey '%s' for table '%s': %s",
+									vmapName, sgKey, chain.Table.Name, err.Error(),
+								)
+							}
+						}	
+					}
+				}
+				// icmp needs to be handled separated from the
+				// port lookup so a separate rule is created
+				// just for icmp
+				if addICMPRule {
+					rules = append(rules,
+						&nftables.Rule{
+							Table: chain.Table,
+							Chain: chain,
+							Exprs: append(sgExprs,
+								// [ meta load l4proto => reg 1 ]
+								&expr.Meta{Key: expr.MetaKeyL4PROTO, Register: 1},
+								// [ cmp eq reg 1 <protoData> ]
+								&expr.Cmp{
+									Op:       expr.CmpOpEq,
+									Register: 1,
+									Data:     []byte{unix.IPPROTO_ICMP},
+								},
+								// accept
+								&expr.Verdict{
+									// [ immediate reg 0 accept ]
+									Kind: expr.VerdictAccept,
+								},
+							),
+						},
+					)
+				}
+				// port filters are added to the port vmap so 
+				// the a vmap lookup binding needs to be created
+				if addPortVmapRule {
+					rules = append(rules,
+						&nftables.Rule{
+							Table: chain.Table,
+							Chain: chain,
+							Exprs: append(sgExprs,
+								// [ payload load 1b @ network header + <protoOffset> => reg 9 ]
+								&expr.Payload{
+									Len:          1,
+									Base:         expr.PayloadBaseNetworkHeader,
+									Offset:       protoOffset, // Protocol IPv4 / NextHdr IPv6
+									DestRegister: 9,
+								},
+								// [ payload load 2b @ transport header + 2 (dest port) => reg 10 ]
+								&expr.Payload{
+									Len:          2,
+									Base:         expr.PayloadBaseTransportHeader,
+									Offset:       2, // Destination Port
+									DestRegister: 10,
+								},
+								// [ lookup reg 1 map <sgsPortVmap> ]
+								&expr.Lookup{
+									SourceRegister: 9,
+									SetName:        sgsPortVmap.Name,
+									DestRegister:   0,
+									IsDestRegSet:   true,
+								},
+							),
+						},
+					)
+				}
+			}
+		}
+		if err = r.saveFilterRules(sgKey, rules); err != nil {
+			logger.ErrorMessage(
+				"Failed to create security group filter rule with sgKey '%s': %s",
+				sgKey, err.Error(),
+			)
+		}
+	}
+	return nil
+}
+
+func (r *packetFilterRouter) DeleteSecurityGroups(iifName string, sgs []SecurityGroup) error {
+	return nil
+}
+
+func (r *packetFilterRouter) ForwardPort(dstPort int, forwardPort int, forwardIP netip.Addr, proto Protocol) (string, error) {
+	return r.ForwardPortOnIP(dstPort, forwardPort, netip.Addr{}, forwardIP, proto)
+}
+
+func (r *packetFilterRouter) DeleteForwardPort(dstPort int, forwardPort int, forwardIP netip.Addr, proto Protocol) error {
+	return r.DeleteForwardPortOnIP(dstPort, forwardPort, netip.Addr{}, forwardIP, proto)
+}
+
+func (r *packetFilterRouter) ForwardPortOnIP(dstPort, forwardPort int, dstIP, forwardIP netip.Addr, proto Protocol) (string, error) {
+
+	var (
+		err error
+
+		protoData []byte
+
+		table  *nftables.Table
+		chains []*nftables.Chain
+		rules  []*nftables.Rule
+	)
+
+	isDstIPValid := dstIP.IsValid()
+
+	is4 := forwardIP.Is4()
+	addrLen, _, destOffset, _ := ipHeaderOffsets(is4)
+
+	if table, chains, err = r.getTable(is4); err != nil {
+		return "", err
+	}
+
+	switch proto {
+	case ICMP:
+		protoData = []byte{unix.IPPROTO_ICMP}
+	case TCP:
+		protoData = []byte{unix.IPPROTO_TCP}
+	case UDP:
+		protoData = []byte{unix.IPPROTO_UDP}
+	default:
+		return "", fmt.Errorf("unsupported protocol")
+	}
+
+	// add pre-routing dnat rule to forward to given ip:port
+	rule := &nftables.Rule{
+		Table: table,
+		Chain: chains[natPreRoute],
+	}
+	// [ ip daddr <dstIP> ] tcp dport <dstPort> dnat to <forwardIP>:<forwardPort>
+	if isDstIPValid {
+		rule.Exprs = []expr.Any{
+			// [ payload load 4b @ network header + 16 (dest addr) => reg 1 ]
+			&expr.Payload{
+				DestRegister: 1,
+				Base:         expr.PayloadBaseNetworkHeader,
+				Offset:       destOffset,
+				Len:          addrLen,
+			},
+			// cmp eq reg 1 <dstIP>
+			&expr.Cmp{
+				Op:       expr.CmpOpEq,
+				Register: 1,
+				Data:     dstIP.AsSlice(),
+			},
+		}
+	}
+	rule.Exprs = append(rule.Exprs,
+		[]expr.Any{
+			// [ meta load l4proto => reg 1 ]
+			&expr.Meta{Key: expr.MetaKeyL4PROTO, Register: 1},
+			// [ cmp eq reg 1 <protoData> ]
+			&expr.Cmp{
+				Op:       expr.CmpOpEq,
+				Register: 1,
+				Data:     protoData,
+			},
+			// [ payload load 2b @ transport header + 2 => reg 1 ]
+			&expr.Payload{
+				DestRegister: 1,
+				Base:         expr.PayloadBaseTransportHeader,
+				Offset:       2, // Destination Port
+				Len:          2,
+			},
+			// [ cmp eq reg 1 <dstPort> ]
+			&expr.Cmp{
+				Op:       expr.CmpOpEq,
+				Register: 1,
+				Data:     binaryutil.BigEndian.PutUint16(uint16(dstPort)),
+			},
+			// [ immediate reg 1 <forwardIP> ]
+			&expr.Immediate{
+				Register: 1,
+				Data:     forwardIP.AsSlice(),
+			},
+			// [ immediate reg 2 <forwardPort> ]
+			&expr.Immediate{
+				Register: 2,
+				Data:     binaryutil.BigEndian.PutUint16(uint16(forwardPort)),
+			},
+			// [ nat dnat ip addr_min reg 1 addr_max reg 0 proto_min reg 2 proto_max reg 0 ]
+			&expr.NAT{
+				Type:        expr.NATTypeDestNAT,
+				Family:      ipFamily(is4),
+				RegAddrMin:  1,
+				RegAddrMax:  1,
+				RegProtoMin: 2,
+				RegProtoMax: 2,
+			},
+		}...,
+	)
+	rules = append(rules, rule)
+
+	// dest ip check expr
+	ipDaddrExpr := []expr.Any{
+		// [ payload load 4b @ network header + 16 (dest addr) => reg 1 ]
+		&expr.Payload{
+			DestRegister: 1,
+			Base:         expr.PayloadBaseNetworkHeader,
+			Offset:       destOffset,
+			Len:          addrLen,
+		},
+		// cmp eq reg 1 <forwardIP>
+		&expr.Cmp{
+			Op:       expr.CmpOpEq,
+			Register: 1,
+			Data:     forwardIP.AsSlice(),
+		},
+	}
+	// add post-routing masq rule
+	rules = append(rules,
+		&nftables.Rule{
+			Table: table,
+			Chain: chains[natPostRoute],
+			// ip daddr <forwardIP> masquerade
+			Exprs: append(
+				ipDaddrExpr,
+				// masq
+				&expr.Masq{},
+			),
+		},
+	)
+
+	// add forward ip accept rule
+	rules = append(rules,
+		&nftables.Rule{
+			Table: table,
+			Chain: chains[filterForward],
+			// ip daddr <forwardIP> accept
+			Exprs: append(
+				ipDaddrExpr,
+				// accept
+				&expr.Verdict{
+					// [ immediate reg 0 accept ]
+					Kind: expr.VerdictAccept,
+				},
+			),
+		},
+	)
+
+	ruleKey := fmt.Sprintf("%s:%d>%s:%d|%s",
+		dstIP.String(), dstPort,
+		forwardIP.String(), forwardPort,
+		string(proto),
+	)
+	return ruleKey, r.saveFilterRules(ruleKey, rules)
+}
+
+func (r *packetFilterRouter) DeleteForwardPortOnIP(dstPort, forwardPort int, dstIP, forwardIP netip.Addr, proto Protocol) error {
+	return r.DeleteFilter(
+		fmt.Sprintf("%s:%d>%s:%d|%s",
+			dstIP.String(), dstPort,
+			forwardIP.String(), forwardPort,
+			string(proto),
+		),
+	)
+}
+
+func (r *packetFilterRouter) ForwardTraffic(srcItfName, dstItfName string, srcNetwork, dstNetwork netip.Prefix, withNat bool) (string, error) {
+
+	var (
+		err error
+
+		table  *nftables.Table
+		chains []*nftables.Chain
+		rules  []*nftables.Rule
+	)
+
+	if srcNetwork.Addr().BitLen() != dstNetwork.Addr().BitLen() {
+		return "", fmt.Errorf("attempt to create forwarding rules between incompatible network address spaces")
+	}
+
+	is4 := srcNetwork.Addr().Is4()
+	addrLen, srcOffset, destOffset, _ := ipHeaderOffsets(is4)
+
+	if table, chains, err = r.getTable(is4); err != nil {
+		return "", err
+	}
+
+	iifname := []byte(srcItfName+"\x00")
+	oifname := []byte(dstItfName+"\x00")
+
+	// ip saddr <srcNetwork> ip daddr <dstNetwork>
+	srcNetworkRange := netipx.RangeOfPrefix(srcNetwork)
+	ipSrcDstExprs := []expr.Any{
+		// [ payload load 4b @ network header + 12 (src addr) => reg 1 ]
+		&expr.Payload{
+			DestRegister: 1,
+			Base:         expr.PayloadBaseNetworkHeader,
+			Offset:       srcOffset,
+			Len:          addrLen,
+		},
+		// [ range neq reg 1 <src network min> - <src network max> ]
+		&expr.Range{
+			Op:       expr.CmpOpEq,
+			Register: 1,
+			FromData: srcNetworkRange.From().AsSlice(),
+			ToData:   srcNetworkRange.To().AsSlice(),
+		},
+	}
+	if dstNetwork != prefixWorld4 && dstNetwork != prefixWorld6 {
+		dstNetworkRange := netipx.RangeOfPrefix(dstNetwork)
+		ipSrcDstExprs = append(ipSrcDstExprs,
+			// [ payload load 4b @ network header + 16 (dest addr) => reg 1 ]
+			&expr.Payload{
+				DestRegister: 1,
+				Base:         expr.PayloadBaseNetworkHeader,
+				Offset:       destOffset,
+				Len:          addrLen,
+			},
+			// [ range neq reg 1 <src network min> - <src network max> ]
+			&expr.Range{
+				Op:       expr.CmpOpEq,
+				Register: 1,
+				FromData: dstNetworkRange.From().AsSlice(),
+				ToData:   dstNetworkRange.To().AsSlice(),
+			},
+		)
+	}
+
+	rules = append(rules,
+		&nftables.Rule{
+			Table: table,
+			Chain: chains[filterForward],
+			Exprs: append(
+				// iifname "srcItf" oifname "i" ip saddr <srcNetwork>ip daddr <dstNetwork> accept
+				[]expr.Any{
+					// [ meta load iifname => reg 1 ]
+					&expr.Meta{Key: expr.MetaKeyIIFNAME, Register: 1},
+					// [ cmp eq reg 1 <iifname> ]
+					&expr.Cmp{
+						Op:       expr.CmpOpEq,
+						Register: 1,
+						Data:     iifname,
+					},
+					// [ meta load iifname => reg 1 ]
+					&expr.Meta{Key: expr.MetaKeyOIFNAME, Register: 1},
+					// [ cmp eq reg 1 <oifname> ]
+					&expr.Cmp{
+						Op:       expr.CmpOpEq,
+						Register: 1,
+						Data:     oifname,
+					},
+				},
+				append(
+					ipSrcDstExprs,
+					//[ immediate reg 0 accept ]
+					&expr.Verdict{
+						Kind: expr.VerdictAccept,
+					},
+				)...
+			),
+		},
+	)
+
+	if withNat {
+		rules = append(rules,
+			&nftables.Rule{
+				Table: table,
+				Chain: chains[natPostRoute],
+				Exprs: append(
+					// oifname "i" ip saddr <srcNetwork> ip daddr <dstNetwork> masquerade
+					[]expr.Any{
+						// meta load oifname => reg 1
+						&expr.Meta{Key: expr.MetaKeyOIFNAME, Register: 1},
+						// [ cmp eq reg 1 <oifname> ]
+						&expr.Cmp{
+							Op:       expr.CmpOpEq,
+							Register: 1,
+							Data:     oifname,
+						},
+					},
+					append(
+						ipSrcDstExprs,
+						// masq
+						&expr.Masq{},
+					)...
+				),
+			},
+		)
+	}
+
+	// retrieve rules saved to table so they can be deleted if required
+	ruleKey := fmt.Sprintf("%s:%s>%s:%s",
+		srcItfName, srcNetwork.String(),
+		dstItfName, dstNetwork.String(),
+	)
+	return ruleKey, r.saveFilterRules(ruleKey, rules)
+}
+
+func (r *packetFilterRouter) DeleteForwardTraffic(srcItfName, dstItfName string, srcNetwork, dstNetwork netip.Prefix) error {
+	return r.DeleteFilter(
+		fmt.Sprintf("%s:%s>%s:%s",
+			srcItfName, srcNetwork.String(),
+			dstItfName, dstNetwork.String(),
+		),
+	)
+}
+
+func (r *packetFilterRouter) saveFilterRules(key string, rules []*nftables.Rule) error {
+
+	var (
+		err error
+
+		savedRules []*nftables.Rule
+		foundRule  *nftables.Rule
+	)
+
+	// remove duplicate rules
+	lr := len(rules)-1
+	for i := lr; i >= 0; i-- {
+		rule := rules[i]
+		if savedRules, err = r.nft.GetRules(rule.Table, rule.Chain); err != nil {
+			return err
+		}
+		if foundRule = findRuleInList(rule, savedRules); foundRule != nil {
+			if i < lr {
+				rules = append(rules[:i], rules[i+1:]...)
+			} else if i == lr {
+				rules	= rules[:i]
+			} else {
+				rules = nil
+			}	
+		}
+	}
+	// add rules
+	for _, rule := range rules {
+		r.nft.AddRule(rule)
+	}
+	// flush rules
+	if err = r.nft.Flush(); err != nil {
+		return err
+	}
+	// get rule handles
+	if len(rules) > 0 {
+		for _, rule := range rules {
+			if savedRules, err = r.nft.GetRules(rule.Table, rule.Chain); err != nil {
+				return err
+			}
+			if foundRule = findRuleInList(rule, savedRules); foundRule == nil {
+				return fmt.Errorf("a saved rule instance was not found for rule with key '%s': %+v", key, rule)
+			}
+			rule.Handle = foundRule.Handle
+		}
+		r.ruleMap[key] = append(r.ruleMap[key], rules...)	
+	}
+	return nil
+}
+
+func (r *packetFilterRouter) DeleteFilter(key string) error {
+
+	var (
+		err       error
+		ok, flush bool
+
+		rules []*nftables.Rule
+	)
+
+	if rules, ok = r.ruleMap[key]; ok {
+		for _, rule := range rules {
+			if err = r.nft.DelRule(rule); err != nil {
+				return err
+			}
+		}
+		delete(r.ruleMap, key)
+		flush = true
+
+	} else {
+		return fmt.Errorf(
+			"no filter rules associated with key '%s' was found",
+			key,
+		)
+	}
+
+	if flush {
+		return r.nft.Flush()
+	} else {
+		return nil
+	}
+}
+
+func (r *packetFilterRouter) Clear() {
+
+	if r.table != nil {
+		for _, t := range r.table {
+			r.nft.DelTable(t)
+		}
+		if err := r.nft.Flush(); err != nil {
+			logger.ErrorMessage(
+				"packetFilterRouter.reset(): Error commiting deletion of mycs nftables: %s",
+				err.Error(),
+			)
+		}
+
+		r.table = nil
+		r.chains = nil
+	}
+}
+
+// helper functions
+
+// returns ip addrLen and srcOffset, destOffset in ip header
+func ipHeaderOffsets(is4 bool) (uint32, uint32, uint32, uint32) {
+	if (is4) {
+		return 4, 12, 16, 9
+	} else {
+		return 16, 8, 24, 6
+	}
+}
+
+// returns the ip family
+func ipFamily(is4 bool) uint32 {
+	if is4 {
+		return unix.NFPROTO_IPV4
+	} else {
+		return unix.NFPROTO_IPV6
+	}
+}
+
+// adds a string to a byte array and reverses it
+// this addresses instances where string values
+// need to be passed to netlink in a reverse
+// byte array of fixed length (this could be a
+// bug in nftables lib)
+func byteString(s string, l int) []byte {
+
+	if len(s) > l {
+		panic("byteString: attempting to create a string larger than the given length")
+	}
+
+	b := make([]byte, l)
+	copy(b, []byte(s))
+	return b
+}
+
+// asynchronously match given rule
+// with that of the rules in list
+func findRuleInList(rule *nftables.Rule, ruleList []*nftables.Rule) *nftables.Rule {
+
+	var (
+		err error
+
+		ruleExprData [][]byte
+		exprData     []byte
+
+		foundRule *nftables.Rule
+	)
+
+	// marshal given rule's exprs for matching
+
+	for _, e := range rule.Exprs {
+		if exprData, err = expr.Marshal(byte(rule.Table.Family), e); err != nil {
+			logger.ErrorMessage("findRuleInList(): Rule marshal error: %s", err.Error())
+			return nil
+		}
+		ruleExprData = append(ruleExprData, exprData)
+	}
+	
+	// fmt.Println(debugPrintRule("Looking up rule in list", rule))
+
+	foundRuleC := make(chan *nftables.Rule, len(ruleList))
+	checkRuleMatch := func(rule, matchRule *nftables.Rule, ruleExprData [][]byte) {
+
+		// fmt.Println(debugPrintRule("Check match of rule from list", matchRule))
+
+		if matchRule.Flags == rule.Flags && 
+			bytes.Equal(matchRule.UserData, rule.UserData) {
+			
+			for i, e := range matchRule.Exprs {
+				if exprData, err = expr.Marshal(byte(matchRule.Table.Family), e); err != nil {
+					logger.ErrorMessage("findRuleInList(): Rule marshal error: %s", err.Error())
+					foundRuleC <-nil
+					return
+				}
+				if !bytes.Equal(exprData, ruleExprData[i]) {
+					foundRuleC <-nil
+					return
+				}
+			}
+			foundRuleC <-matchRule
+			return
+		}
+		foundRuleC <-nil
+	}
+	for _, matchRule := range ruleList {
+		go checkRuleMatch(rule, matchRule, ruleExprData)
+	}
+	for i := 0; i < len(ruleList); i++ {
+		if foundRule = <-foundRuleC; foundRule != nil {
+			break
+		}
+	}
+	// fmt.Printf("Found rule: %+v\n", foundRule)
+	return foundRule
+}
+
+// prints rule for debugging
+func debugPrintRule(msg string, rule *nftables.Rule) string {
+	
+	var (
+		out bytes.Buffer
+	)
+
+	fmt.Fprintf(&out, "BEGIN=> %s\n", msg)
+	fmt.Fprintf(&out, "  Rule....: %+v\n", rule)
+	for i, e := range rule.Exprs {
+		fmt.Fprintf(&out, "    expr..:[%d]: %t\n", i, e)		
+	}
+	fmt.Fprintf(&out, "END=> %s", msg)
+	return out.String()
+}

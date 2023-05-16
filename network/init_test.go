@@ -5,12 +5,14 @@ import (
 	"bytes"
 	"fmt"
 	"regexp"
+	"strings"
 	"testing"
 
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
 
 	"github.com/mevansam/goutils/logger"
+	"github.com/mevansam/goutils/run"
 	"github.com/onsi/gomega/gexec"
 )
 
@@ -24,6 +26,31 @@ func TestNetwork(t *testing.T) {
 var _ = AfterSuite(func() {
 	gexec.CleanupBuildArtifacts()
 })
+
+func testAppliedConfig(
+	description, 
+	shellCmd string, 
+	matchers []*regexp.Regexp, 
+	expectMatched, expectUnmatched int,
+) {
+
+	var (
+		err error
+
+		outputBuffer bytes.Buffer
+	)
+
+	err = run.RunAsAdminWithArgs([]string{ 
+		"/bin/sh", "-c", 
+		shellCmd,
+	}, &outputBuffer, &outputBuffer)
+	Expect(err).ToNot(HaveOccurred())
+
+	fmt.Printf("\n# %s- %s\n", strings.Split(shellCmd, "|")[0], description)
+	matched, unmatched := outputMatcher(outputBuffer, matchers)
+	Expect(matched).To(Equal(expectMatched))
+	Expect(unmatched).To(Equal(expectUnmatched))
+}
 
 func outputMatcher(buffer bytes.Buffer, matchers []*regexp.Regexp) (int, int) {
 		

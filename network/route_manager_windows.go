@@ -30,6 +30,10 @@ func (m *routeManager) NewRoutableInterface(ifaceName, address string) (Routable
 	return &routableInterface{}, nil
 }
 
+func (m *routeManager) NewFilterRouter(denyAll bool) (FilterRouter, error) {
+	return nil, nil
+}
+
 func (m *routeManager) AddExternalRouteToIPs(ips []string) error {
 	return nil
 }
@@ -39,6 +43,10 @@ func (m *routeManager) AddDefaultRoute(gateway string) error {
 }
 
 func (m *routeManager) Clear() {
+}
+
+func (i *routableInterface) Name() string {
+	return ""
 }
 
 func (i *routableInterface) Address4() (string, string, error) {
@@ -53,16 +61,31 @@ func (i *routableInterface) MakeDefaultRoute() error {
 	return nil
 }
 
-func (i *routableInterface) ForwardPortTo(srcPort int, dstPort int, dstIP netip.Addr) error {
+func (i *routableInterface) SetSecurityGroups(sgs []SecurityGroup) error {
 	return nil
 }
 
-func (i *routableInterface) DeletePortForwardedTo(srcPort int, dstPort int, dstIP netip.Addr) error {
+func (i *routableInterface) DeleteSecurityGroups(sgs []SecurityGroup) error {
 	return nil
 }
 
-func (i *routableInterface) FowardTrafficFrom(srcItf RoutableInterface, srcNetwork, destNetworks string, nat bool) error {
-	// NAT packets from src to network this itf is connected
+func (i *routableInterface) ForwardPortTo(proto Protocol, dstPort int, forwardPort int, forwardIP netip.Addr) error {
+	return nil
+}
+
+func (i *routableInterface) DeletePortForwardedTo(proto Protocol, dstPort int, forwardPort int, forwardIP netip.Addr) error {
+	return nil
+}
+
+func (i *routableInterface) FowardTrafficTo(dstItf RoutableInterface, srcNetwork, dstNetwork string, withNat bool) error {
+	return nil
+}
+
+func (i *routableInterface) DeleteTrafficForwardedTo(dstItf RoutableInterface, srcNetwork, dstNetwork string) error {
+	return nil
+}
+
+func (i *routableInterface) FowardTrafficFrom(srcItf RoutableInterface, srcNetwork, dstNetwork string, withNat bool) error {
 	return nil
 }
 

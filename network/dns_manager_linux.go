@@ -63,11 +63,12 @@ func (c *networkContext) NewDNSManager() (DNSManager, error) {
 		return nil, err
 	}
 
-	m := &dnsManager{
+	dm := &dnsManager{
 		nc:       c,
 		resolved: conn.Object(dbusResolvedObject, dbus.ObjectPath(dbusResolvedPath)),
 	}
-	return m, nil
+	c.dm = dm
+	return c.dm, nil
 }
 
 func (m *dnsManager) AddDNSServers(servers []string) error {

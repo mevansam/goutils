@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"fmt"
 	"net"
+	"net/netip"
 	"regexp"
 	"time"
 
@@ -26,6 +27,14 @@ var _ = Describe("Route Manager", func() {
 
 		nc network.NetworkContext
 	)
+
+	BeforeEach(func() {
+		isAdmin, err := run.IsAdmin()
+		Expect(err).ToNot(HaveOccurred())
+		if !isAdmin {
+			Fail("This test needs to be run with root privileges. i.e. sudo -E go test -v ./...")
+		}
+	})
 
 	Context("creates routes on a new interface", func() {
 
@@ -47,12 +56,6 @@ var _ = Describe("Route Manager", func() {
 		})
 	
 		It("creates a new default gateway with routes that bypass it", func() {
-	
-			isAdmin, err := run.IsAdmin()
-			Expect(err).ToNot(HaveOccurred())
-			if !isAdmin {
-				Fail("This test needs to be run with root privileges. i.e. sudo -E go test -v ./...")
-			}
 	
 			routeManager, err := nc.NewRouteManager()
 			Expect(err).ToNot(HaveOccurred())
@@ -148,19 +151,16 @@ var _ = Describe("Route Manager", func() {
 			}
 		})
 
-		FIt("creates a NAT route on an interface", func() {
+		It("creates routes between interfaces and NATs out", func() {
 			if skipTests {
 				fmt.Println("No second interface so skipping test \"creates a NAT route on an interface\"...")
 			}
 
-			isAdmin, err := run.IsAdmin()
-			Expect(err).ToNot(HaveOccurred())
-			if !isAdmin {
-				Fail("This test needs to be run with root privileges. i.e. sudo -E go test -v ./...")
-			}
-
 			routeManager, err := nc.NewRouteManager()
 			Expect(err).ToNot(HaveOccurred())
+			_, err = routeManager.NewFilterRouter(true)
+			Expect(err).ToNot(HaveOccurred())
+
 			ritf1, err := routeManager.GetDefaultInterface()            // interface to world 
 			Expect(err).ToNot(HaveOccurred())
 			ritf2, err := routeManager.GetRoutableInterface(itf2.Name)  // interface to lan1
@@ -190,85 +190,228 @@ var _ = Describe("Route Manager", func() {
 			err = ritf2.FowardTrafficFrom(ritf3, network.LAN4, network.LAN4, false)
 			Expect(err).ToNot(HaveOccurred())
 
-			outputBuffer.Reset()
-			err = run.RunAsAdminWithArgs([]string{ "/usr/sbin/ip", "route", "show" }, &outputBuffer, &outputBuffer)
-			Expect(err).ToNot(HaveOccurred())
-	
-			fmt.Printf("\n# ip route show\n===\n%s===\n", outputBuffer.String())
+			showNftRuleset()
 
-			outputBuffer.Reset()
-			err = run.RunAsAdminWithArgs([]string{ 
-				"/bin/sh", "-c", 
+			forwardRuleMatches := []*regexp.Regexp{
+				regexp.MustCompile(`^\s+ct state vmap @ctstate\s*$`),
+				// routing between lan1 to lan2
+				regexp.MustCompile(`^\s+iifname "eth1" oifname "eth2" ip saddr 192.168.10.0-192.168.10.255 ip daddr 192.168.11.0-192.168.11.255 accept\s*$`),
+				regexp.MustCompile(`^\s+iifname "eth2" oifname "eth1" ip saddr 192.168.11.0-192.168.11.255 ip daddr 192.168.10.0-192.168.10.255 accept\s*$`),
+				// allow lan1 access to internet
+				regexp.MustCompile(`^\s+iifname "eth1" oifname "eth0" ip saddr 192.168.10.0-192.168.10.255 accept\s*$`),
+				// allow lan2 access to only 8.8.8.8 externally
+				regexp.MustCompile(`^\s+iifname "eth2" oifname "eth0" ip saddr 192.168.11.0-192.168.11.255 ip daddr 8.8.8.8-8.8.8.8 accept\s*$`),
+			}			
+			natPostRuleMatches := []*regexp.Regexp{
+				// masq lan1 to world
+				regexp.MustCompile(`^\s+oifname "eth0" ip saddr 192.168.10.0-192.168.10.255 masquerade\s*$`),
+				// masq lan2 to only 8.8.8.8 externally
+				regexp.MustCompile(`^\s+oifname "eth0" ip saddr 192.168.11.0-192.168.11.255 ip daddr 8.8.8.8-8.8.8.8 masquerade\s*$`),
+			}
+			
+			testAppliedConfig("forward chain rules after config",
 				"nft list ruleset | sed -n '/^table ip mycs_router_ipv4 {/,/^}/p' | sed -n '/chain forward {/,/}/p'",
-			}, &outputBuffer, &outputBuffer)
-			Expect(err).ToNot(HaveOccurred())
-	
-			fmt.Printf("\n# nft list ruleset - forward rules after config\n")
-			matched, unmatched := outputMatcher(outputBuffer, forwardRuleMatches)
-			Expect(matched).To(Equal(5))
-			Expect(unmatched).To(Equal(0))
-
-			outputBuffer.Reset()
-			err = run.RunAsAdminWithArgs([]string{ 
-				"/bin/sh", "-c", 
+				forwardRuleMatches, 5, 0,
+			)
+			testAppliedConfig("nat post-routing chain rules after config",
 				"nft list ruleset | sed -n '/^table ip mycs_router_ipv4 {/,/^}/p' | sed -n '/chain nat_postrouting {/,/}/p'",
-			}, &outputBuffer, &outputBuffer)
-			Expect(err).ToNot(HaveOccurred())
-
-			fmt.Printf("\n# nft list ruleset - nat rules after config\n")
-			matched, unmatched = outputMatcher(outputBuffer, natRuleMatches)
-			Expect(matched).To(Equal(2))
-			Expect(unmatched).To(Equal(0))
-
+				natPostRuleMatches, 2, 0,
+			)
 			time.Sleep(time.Second * 15) // increase to pause for manual validation
 
 			// delete forwarding rules
 			err = ritf1.DeleteTrafficForwardedFrom(ritf3, network.LAN4, "8.8.8.8/32")
 			Expect(err).ToNot(HaveOccurred())
 
-			outputBuffer.Reset()
-			err = run.RunAsAdminWithArgs([]string{ 
-				"/bin/sh", "-c", 
+			testAppliedConfig("forward chain rules after delete",
 				"nft list ruleset | sed -n '/^table ip mycs_router_ipv4 {/,/^}/p' | sed -n '/chain forward {/,/}/p'",
-			}, &outputBuffer, &outputBuffer)
-			Expect(err).ToNot(HaveOccurred())
-
-			fmt.Printf("\n# nft list ruleset - forward rules after deletion of rule\n")
-			matched, unmatched = outputMatcher(outputBuffer, forwardRuleMatches)
-			Expect(matched).To(Equal(4))
-			Expect(unmatched).To(Equal(1))
-
-			outputBuffer.Reset()
-			err = run.RunAsAdminWithArgs([]string{ 
-				"/bin/sh", "-c", 
+				forwardRuleMatches, 4, 1,
+			)
+			testAppliedConfig("nat post-routing chain rules after delete",
 				"nft list ruleset | sed -n '/^table ip mycs_router_ipv4 {/,/^}/p' | sed -n '/chain nat_postrouting {/,/}/p'",
-			}, &outputBuffer, &outputBuffer)
+				natPostRuleMatches, 1, 1,
+			)
+			time.Sleep(time.Second * 15) // increase to pause for manual validation
+		})
+
+		It("forwards a port to another host", func() {
+			if skipTests {
+				fmt.Println("No second interface so skipping test \"creates a NAT route on an interface\"...")
+			}
+
+			routeManager, err := nc.NewRouteManager()
 			Expect(err).ToNot(HaveOccurred())
 
-			fmt.Printf("\n# nft list ruleset - nat rules after deletion of rule\n")
-			matched, unmatched = outputMatcher(outputBuffer, natRuleMatches)
-			Expect(matched).To(Equal(1))
-			Expect(unmatched).To(Equal(1))
+			filterRouter, err := routeManager.NewFilterRouter(false)
+			Expect(err).ToNot(HaveOccurred())
 
+			ritf2, err := routeManager.GetRoutableInterface(itf2.Name)  // interface to lan1
+			Expect(err).ToNot(HaveOccurred())
+
+			// forward 192.168.10.1:8080 to 192.168.11.1:80
+			err = ritf2.ForwardPortTo(network.TCP, 8080, 80, netip.MustParseAddr("192.168.11.10"))
+			Expect(err).ToNot(HaveOccurred())
+			// forward :8888 to 192.168.10.1:80
+			_, err = filterRouter.ForwardPort(8888, 80, netip.MustParseAddr("192.168.10.10"), network.TCP)
+			Expect(err).ToNot(HaveOccurred())
+
+			showNftRuleset()
+
+			forwardRuleMatches := []*regexp.Regexp{
+				regexp.MustCompile(`^\s+ct state vmap @ctstate\s*$`),
+				// allow port forward from 192.168.10.1:8080 to 192.168.11.10:80
+				regexp.MustCompile(`^\s+ip daddr 192.168.11.10 accept\s*$`),
+				// allow port forward from :8888 to 192.168.10.10:80
+				regexp.MustCompile(`^\s+ip daddr 192.168.10.10 accept\s*$`),
+			}
+			natPreRuleMatches := []*regexp.Regexp{
+				// forward 192.168.10.1:8080 to 192.168.11.1:80
+				regexp.MustCompile(`^\s+ip daddr 192.168.10.1 tcp dport 8080 dnat to 192.168.11.10:80\s*$`),
+				// forward incoming requests to 8888 on all interfaces to 192.168.10.10:80 
+				regexp.MustCompile(`^\s+tcp dport 8888 dnat to 192.168.10.10:80\s*$`),
+			}
+			natPostRuleMatches := []*regexp.Regexp{
+				// masq traffic forwarded from 192.168.11.10:8080 to 192.168.11.1:80 
+				regexp.MustCompile(`^\s+ip daddr 192.168.11.10 masquerade\s*$`),
+				// masq traffic forwarded to 192.168.10.10:80 
+				regexp.MustCompile(`^\s+ip daddr 192.168.10.10 masquerade\s*$`),
+			}
+
+			testAppliedConfig("forward chain rules after config",
+				"nft list ruleset | sed -n '/^table ip mycs_router_ipv4 {/,/^}/p' | sed -n '/chain forward {/,/}/p'",
+				forwardRuleMatches, 3, 0,
+			)
+			testAppliedConfig("nat pre-routing chain rules after config",
+				"nft list ruleset | sed -n '/^table ip mycs_router_ipv4 {/,/^}/p' | sed -n '/chain nat_prerouting {/,/}/p'",
+				natPreRuleMatches, 2, 0,
+			)
+			testAppliedConfig("nat post-routing chain rules after config",
+				"nft list ruleset | sed -n '/^table ip mycs_router_ipv4 {/,/^}/p' | sed -n '/chain nat_postrouting {/,/}/p'",
+				natPostRuleMatches, 2, 0,
+			)
 			time.Sleep(time.Second * 15) // increase to pause for manual validation
+
+			// delete port forwarding rules
+			err = ritf2.DeletePortForwardedTo(network.TCP, 8080, 80, netip.MustParseAddr("192.168.11.10"))
+			Expect(err).ToNot(HaveOccurred())
+
+			testAppliedConfig("forward chain rules after delete",
+				"nft list ruleset | sed -n '/^table ip mycs_router_ipv4 {/,/^}/p' | sed -n '/chain forward {/,/}/p'",
+				forwardRuleMatches, 2, 1,
+			)
+			testAppliedConfig("nat pre-routing chain rules after delete",
+				"nft list ruleset | sed -n '/^table ip mycs_router_ipv4 {/,/^}/p' | sed -n '/chain nat_prerouting {/,/}/p'",
+				natPreRuleMatches, 1, 1,
+			)
+			testAppliedConfig("nat post-routing chain rules after delete",
+				"nft list ruleset | sed -n '/^table ip mycs_router_ipv4 {/,/^}/p' | sed -n '/chain nat_postrouting {/,/}/p'",
+				natPostRuleMatches, 1, 1,
+			)
+			time.Sleep(time.Second * 15) // increase to pause for manual validation
+		})
+
+		FIt("applies firewall rules using security groups", func() {
+			if skipTests {
+				fmt.Println("No second interface so skipping test \"creates a NAT route on an interface\"...")
+			}
+
+			routeManager, err := nc.NewRouteManager()
+			Expect(err).ToNot(HaveOccurred())
+			filterRouter, err := routeManager.NewFilterRouter(true)
+			Expect(err).ToNot(HaveOccurred())
+
+			ritf1, err := routeManager.GetDefaultInterface()            // interface to world 
+			Expect(err).ToNot(HaveOccurred())
+			ritf2, err := routeManager.GetRoutableInterface(itf2.Name)  // interface to lan1
+			Expect(err).ToNot(HaveOccurred())
+			ritf3, err := routeManager.GetRoutableInterface(itf3.Name)  // interface to lan2
+			Expect(err).ToNot(HaveOccurred())
+
+			// security group allow ssh on ritf1
+			allowSSH := network.SecurityGroup{
+				Ports: []network.PortGroup{
+					{
+						Proto: network.TCP,
+						FromPort: 22,
+						ToPort: 22,	
+					},
+				},
+			}
+			err = filterRouter.SetSecurityGroups(ritf1.Name(), []network.SecurityGroup{allowSSH})
+			Expect(err).ToNot(HaveOccurred())
+			denyHTTPto11 := network.SecurityGroup{
+				Deny: true,
+				SrcNetwork: netip.MustParsePrefix("192.168.10.10/24"),
+				DstNetwork: netip.MustParsePrefix("192.168.11.10/24"),
+				Ports: []network.PortGroup{
+					{
+						Proto: network.TCP,
+						FromPort: 80,
+						ToPort: 80,	
+					},
+				},
+			}
+			allowICMPath1 := network.SecurityGroup{
+				Ports: []network.PortGroup{
+					{
+						Proto: network.ICMP,
+					},
+				},
+			}
+			err = ritf2.SetSecurityGroups([]network.SecurityGroup{allowICMPath1,denyHTTPto11})
+			Expect(err).ToNot(HaveOccurred())
+			denyHTTPto10 := network.SecurityGroup{
+				Deny: true,
+				DstNetwork: netip.MustParsePrefix("192.168.10.10/24"),
+				Ports: []network.PortGroup{
+					{
+						Proto: network.TCP,
+						FromPort: 80,
+						ToPort: 80,	
+					},
+				},
+			}
+			allowICMPath2 := network.SecurityGroup{
+				Ports: []network.PortGroup{
+					{
+						Proto: network.ICMP,
+					},
+				},
+			}
+			err = ritf3.SetSecurityGroups([]network.SecurityGroup{allowICMPath2,denyHTTPto10})
+			Expect(err).ToNot(HaveOccurred())
+
+			// forward packets from lan1 to lan2 (ip v4)
+			err = ritf3.FowardTrafficFrom(ritf2, network.LAN4, network.LAN4, false)
+			Expect(err).ToNot(HaveOccurred())
+			// forward packets from lan2 to lan1 (ip v4)
+			err = ritf2.FowardTrafficFrom(ritf3, network.LAN4, network.LAN4, false)
+			Expect(err).ToNot(HaveOccurred())
+
+			showNftRuleset()
+
+			time.Sleep(time.Second * 30) // increase to pause for manual validation			
 		})
 	})
 })
 
-var forwardRuleMatches = []*regexp.Regexp{
-	regexp.MustCompile(`^\s+ct state vmap @ctstate\s*$`),
-	// routing between lan1 to lan2
-	regexp.MustCompile(`^\s+iifname "eth1" oifname "eth2" ip saddr 192.168.10.0-192.168.10.255 ip daddr 192.168.11.0-192.168.11.255 accept\s*$`),
-	regexp.MustCompile(`^\s+iifname "eth2" oifname "eth1" ip saddr 192.168.11.0-192.168.11.255 ip daddr 192.168.10.0-192.168.10.255 accept\s*$`),
-	// allow lan1 access to internet
-	regexp.MustCompile(`^\s+iifname "eth1" oifname "eth0" ip saddr 192.168.10.0-192.168.10.255 accept\s*$`),
-	// allow lan2 access to only 8.8.8.8 externally
-	regexp.MustCompile(`^\s+iifname "eth2" oifname "eth0" ip saddr 192.168.11.0-192.168.11.255 ip daddr 8.8.8.8-8.8.8.8 accept\s*$`),
-}
+func showNftRuleset() {
 
-var natRuleMatches = []*regexp.Regexp{
-	// masq lan1 to world
-	regexp.MustCompile(`^\s+oifname "eth0" ip saddr 192.168.10.0-192.168.10.255 masquerade\s*$`),
-	// masq lan2 to only 8.8.8.8 externally
-	regexp.MustCompile(`^\s+oifname "eth0" ip saddr 192.168.11.0-192.168.11.255 ip daddr 8.8.8.8-8.8.8.8 masquerade\s*$`),
+	var (
+		err error
+
+		outputBuffer bytes.Buffer
+	)
+
+	err = run.RunAsAdminWithArgs([]string{ "/usr/sbin/ip", "route", "show" }, &outputBuffer, &outputBuffer)
+	Expect(err).ToNot(HaveOccurred())
+	fmt.Printf("\n# ip route show\n=====\n%s=====\n", outputBuffer.String())
+
+	outputBuffer.Reset()
+	err = run.RunAsAdminWithArgs([]string{ 
+		"/bin/sh", "-c", 
+		"nft list ruleset",
+	}, &outputBuffer, &outputBuffer)
+	Expect(err).ToNot(HaveOccurred())
+	fmt.Printf("\n# nft list ruleset\n=====\n%s=====\n\n", outputBuffer.String())	
 }

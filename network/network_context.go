@@ -38,13 +38,9 @@ var Network = struct {
 var (
 	initErr     chan error
 	initialized bool
-)
 
-const (
-	WORLD4 = "0.0.0.0/0"
-	WORLD6 = "::/0"
-	LAN4   = "4"
-	LAN6   = "6"
+	prefixWorld4 = netip.MustParsePrefix(WORLD4)
+	prefixWorld6 = netip.MustParsePrefix(WORLD6)
 )
 
 // route type functions

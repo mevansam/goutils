@@ -15,6 +15,9 @@ import (
 type networkContext struct {
 	routedItfs []routableInterface
 	routedIPs  []netlink.Route
+
+	dm *dnsManager
+	rm *routeManager
 }
 
 func NewNetworkContext() (NetworkContext, error) {
@@ -35,30 +38,12 @@ func (c *networkContext) DisableIPv6() error {
 }
 
 func (c *networkContext) Clear() {
-
-	var (
-		err error
-
-		dnsManager   DNSManager
-		routeManager RouteManager
-	)
-
-	if dnsManager, err = c.NewDNSManager(); err != nil {
-		logger.ErrorMessage(
-			"networkContext.Clear(): Error creating DNS manager to use to clear network context: %s", 
-			err.Error(),
-		)
-	} else {
-		dnsManager.Clear()
+	
+	if c.dm != nil {
+		c.dm.Clear()
 	}
-
-	if routeManager, err = c.NewRouteManager(); err != nil {
-		logger.ErrorMessage(
-			"networkContext.Clear(): Error creating DNS manager to use to clear network context: %s", 
-			err.Error(),
-		)
-	} else {
-		routeManager.Clear()
+	if c.rm != nil {
+		c.rm.Clear()
 	}
 }
 
