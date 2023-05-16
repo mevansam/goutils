@@ -3,12 +3,27 @@ package utils
 import (
 	"bufio"
 	"bytes"
+	"encoding/hex"
 	"fmt"
+	"hash"
 	"io"
 	"math/rand"
 	"regexp"
 	"strings"
+
+	"github.com/minio/highwayhash"
 )
+
+var hashKey []byte
+
+func init() {
+	// initialize hash key to a value
+	// which will always be the same
+	hashKey = make([]byte, 32)
+	for i := 0; i < 32; i++ {
+    hashKey[i] = byte(i*8)
+	}
+}
 
 func PtrToStr(s string) *string {
 	return &s
@@ -228,6 +243,24 @@ func RandomString(n int) string {
 		b[i] = letterBytes[rand.Int63() % int64(len(letterBytes))]
 	}
 	return string(b)
+}
+
+func HashString(s, prefix string, index int) (string, error) {
+
+	var (
+		err  error
+		hash hash.Hash
+	)
+
+	// hash the sgs key so we have a fixed name
+	// of fixed length within limits for the vmap
+	if hash, err = highwayhash.New64(hashKey); err == nil {
+		_, err = io.Copy(hash, bytes.NewBuffer([]byte(s)))
+	}
+	if err != nil {
+		return "", err
+	}
+	return fmt.Sprintf("%s_%s_%d", prefix, hex.EncodeToString(hash.Sum(nil)), index), nil
 }
 
 func ExtractMatches(buffer []byte, patterns map[string]*regexp.Regexp) map[string][][]string {
