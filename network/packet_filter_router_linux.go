@@ -4,20 +4,18 @@ package network
 
 import (
 	"bytes"
-	"encoding/hex"
 	"fmt"
-	"hash"
-	"io"
 	"net/netip"
+	"sync"
 
 	"github.com/google/nftables"
 	"github.com/google/nftables/binaryutil"
 	"github.com/google/nftables/expr"
-	"github.com/minio/highwayhash"
 	"go4.org/netipx"
 	"golang.org/x/sys/unix"
 
 	"github.com/mevansam/goutils/logger"
+	"github.com/mevansam/goutils/utils"
 )
 
 type packetFilterRouter struct {
@@ -29,7 +27,7 @@ type packetFilterRouter struct {
 	inboundIFNameVmap []*nftables.Set
 	inboundChains map[string][]*nftables.Chain
 
-	sgsPortVmaps map[string]*nftables.Set
+	sgPortVmaps map[string]*nftables.Set
 
 	setMap  map[string]*nftables.Set
 	ruleMap map[string][]*nftables.Rule
@@ -43,18 +41,7 @@ const (
 	natPostRoute  = 4
 )
 
-var hashKey []byte
-
 var keyEnd = []byte{ 0xff, 0xff }
-
-func init() {
-	// initialize hash key to a value
-	// which will always be the same
-	hashKey = make([]byte, 32)
-	for i := 0; i < 32; i++ {
-    hashKey[i] = byte(i*8)
-	}
-}
 
 func (m *routeManager) NewFilterRouter(denyAll bool) (FilterRouter, error) {
 
@@ -70,7 +57,7 @@ func (m *routeManager) NewFilterRouter(denyAll bool) (FilterRouter, error) {
 
 		inboundIFNameVmap : make([]*nftables.Set, 2),
 		inboundChains     : make(map[string][]*nftables.Chain),
-		sgsPortVmaps      : make(map[string]*nftables.Set),
+		sgPortVmaps      : make(map[string]*nftables.Set),
 
 		ruleMap : make(map[string][]*nftables.Rule),
 	}
@@ -344,7 +331,7 @@ func (r *packetFilterRouter) SetSecurityGroups(iifName string, sgs []SecurityGro
 
 	// chain inbound_<itf_name>
 	//
-	// sgsPortVmaps =>
+	// sgPortVmaps =>
 	//
 	// map sgs_<itf_name> {
 	//   type proto . dport : verdict
@@ -358,7 +345,7 @@ func (r *packetFilterRouter) SetSecurityGroups(iifName string, sgs []SecurityGro
 
 	// chain forward
 	//
-	// sgsPortVmaps =>
+	// sgPortVmaps =>
 	//
 	// map sgs_<src_network> {
 	//   type proto . dport : verdict
@@ -374,25 +361,19 @@ func (r *packetFilterRouter) SetSecurityGroups(iifName string, sgs []SecurityGro
 
 	var (
 		err error
-		ok  bool
 
-		hash hash.Hash
+		sgKeyB bytes.Buffer
 
-		keyType     nftables.SetDatatype
-		sgsPortVmap *nftables.Set
+		vmapName   string
+		sgPortVmap *nftables.Set
 
-		rules []*nftables.Rule
-
-		addICMPRule, addPortVmapRule bool
+		verdict expr.VerdictKind
+		rules   []*nftables.Rule
 	)
 
 	for _, sg := range sgs {
 
 		// validate sg
-		if len(iifName) == 0 && !sg.SrcNetwork.IsValid() && !sg.DstNetwork.IsValid(){
-			logger.ErrorMessage("At least one of IifName, SrcNetwork or DstNetwork must be set for a security group: %# v", sg)
-			continue
-		}
 		if sg.SrcNetwork.IsValid() && sg.DstNetwork.IsValid() && sg.SrcNetwork.Addr().Is4() != sg.DstNetwork.Addr().Is4() {
 			logger.ErrorMessage("Cannot mix ipv4 and ipv6 types for SrcNetwork and DstNetwork: %# v", sg)
 			continue
@@ -400,13 +381,26 @@ func (r *packetFilterRouter) SetSecurityGroups(iifName string, sgs []SecurityGro
 
 		logger.TraceMessage("packetFilterRouter.SetSecurityGroups(): Applying security group: %# v", sg)
 
-		addToChain := []bool{ true, true } // apply rules to both ip4 and ipv6 chains
-		sgKey := "sgs_"
+		sgKeyB.Reset()
+		sgKeyB.WriteString("sgs")
+
 		sgExprsPre := []expr.Any{}
+
+		// For tcp and udp protocols create rule that binds to port group vmap
+		//
+		// iifname <iifName> ip saddr <sg.SrcNetwork> ip daddr <sg.DstNetwork> ip protocol . dport vmap @<sgPortVmap>
+		//
+		// For icmp protocol create rule with accept or deny
+		//
+		// iifname <iifName> ip saddr <sg.SrcNetwork> ip daddr <sg.DstNetwork> icmp type echo-request accept
+
+		// add filter to forward chain unless
+		// otherwise determined below
 		targetChain := r.getChain(filterForward)
 
 		if len(iifName) > 0 {
-			sgKey += iifName
+			sgKeyB.WriteByte('_')
+			sgKeyB.WriteString(iifName)
 
 			if !sg.DstNetwork.IsValid() {
 				// if interface name is set and no dst network then
@@ -434,39 +428,42 @@ func (r *packetFilterRouter) SetSecurityGroups(iifName string, sgs []SecurityGro
 			// no dst network so add filter to the input chain
 			targetChain = r.getChain(filterInput)
 		}
+
+		// apply rules to both ip4 and ipv6 chains
+		// unless otherwise determined below
+		addToChain := []bool{ true, true }
 		if sg.SrcNetwork.IsValid() || sg.DstNetwork.IsValid() {
 			addToChain[0] = sg.SrcNetwork.Addr().Is4() || sg.DstNetwork.Addr().Is4() // apply rules only to ip4 chain
 			addToChain[1] = sg.SrcNetwork.Addr().Is6() || sg.DstNetwork.Addr().Is6() // apply rules only to ip6 chain
 		}
 
-		// hash the sgs key so we have a fixed
-		// name of fixed length within limits
-		if hash, err = highwayhash.New64(hashKey); err == nil {
-			_, err = io.Copy(hash, bytes.NewBuffer([]byte(sgKey)))
+		// set rule verdict for security group
+		if sg.Deny {
+			verdict = expr.VerdictDrop
+		} else {
+			verdict = expr.VerdictAccept
 		}
-		if err != nil {
-			logger.ErrorMessage("Failed to create hash for sgKey '%s': %s", sgKey, err.Error())
-			continue
-		}
-		sgsKeyHash := hex.EncodeToString(hash.Sum(nil))
 
-		// For tcp and udp protocols
-		//
-		// iifname <iifName> ip saddr <sg.SrcNetwork> ip daddr <sg.DstNetwork> ip protocol . dport vmap @<sgsPortVmap>
-		//
-		// For icmp protocol
-		//
-		// iifname <iifName> ip saddr <sg.SrcNetwork> ip daddr <sg.DstNetwork> icmp type echo-request accept
+		// the sg rule reference key
+		if sg.SrcNetwork.IsValid() {
+			sgKeyB.WriteByte('_')
+			sgKeyB.WriteString(sg.SrcNetwork.String())
+		}
+		if sg.DstNetwork.IsValid() {
+			sgKeyB.WriteByte('_')
+			sgKeyB.WriteString(sg.DstNetwork.String())
+		}
+		sgKey := sgKeyB.String()
 
 		for i, chain := range targetChain {
-			sgExprs := sgExprsPre			
-			vmapName := fmt.Sprintf("sgs_%s_%d", sgsKeyHash, i)
+			sgExprs := sgExprsPre
 
 			if addToChain[i] {
+				sgPortVmap = nil
+				addICPMRule, addVMapPortRule := sync.Once{}, sync.Once{}
 				addrLen, srcOffset, destOffset, protoOffset := ipHeaderOffsets(i == 0)
 
 				if sg.SrcNetwork.IsValid() {
-					sgKey += "_"+sg.SrcNetwork.String()
 					srcNetworkRange := netipx.RangeOfPrefix(sg.SrcNetwork)
 					sgExprs = append(sgExprs,
 						// [ payload load 4b @ network header + 12 (src addr) => reg 1 ]
@@ -486,7 +483,6 @@ func (r *packetFilterRouter) SetSecurityGroups(iifName string, sgs []SecurityGro
 					)
 				}
 				if sg.DstNetwork.IsValid() {
-					sgKey += "_"+sg.DstNetwork.String()
 					dstNetworkRange := netipx.RangeOfPrefix(sg.DstNetwork)
 					sgExprs = append(sgExprs,
 						// [ payload load 4b @ network header + 16 (dest addr) => reg 1 ]
@@ -506,44 +502,91 @@ func (r *packetFilterRouter) SetSecurityGroups(iifName string, sgs []SecurityGro
 					)
 				}
 
-				// get security group port vmap
-				if sgsPortVmap, ok = r.sgsPortVmaps[vmapName]; !ok {
-
-					if keyType, err = nftables.ConcatSetType(
-						nftables.TypeInetProto,
-						nftables.TypeInetService,
-					); err != nil {
-						logger.ErrorMessage(
-							"Failed to create key type for sgsPortVmap set for sgKey '%s' with name '%s' for table '%s': %s",
-							sgKey, vmapName, chain.Table.Name, err.Error(),
-						)
-						continue
-					}
-					sgsPortVmap = &nftables.Set{
-						Name:          vmapName,
-						Table:         chain.Table,
-						IsMap:         true,
-						KeyType:       keyType,
-						DataType:      nftables.TypeVerdict,
-					}
-					if err = r.nft.AddSet(sgsPortVmap, nil); err != nil {
-						logger.ErrorMessage(
-							"Failed to add sgsPortVmap set for sgKey '%s' with name '%s' for table '%s': %s",
-							sgKey, vmapName, chain.Table.Name, err.Error(),
-						)
-						continue
-					}					
-					r.sgsPortVmaps[vmapName] = sgsPortVmap
+				if vmapName, err = utils.HashString(sgKey, "sgs", i); err != nil {
+					logger.ErrorMessage("Failed to create hash for sgKey '%s': %s", sgKey, err.Error())
+					continue
 				}
 
 				// add port filter rules to vmap
-				addICMPRule, addPortVmapRule = false, false
 				for _, pg := range sg.Ports {
+
 					if pg.Proto == ICMP {
-						addICMPRule = true
+						// rule added only once for all port groups. so
+						// any additional port groups with icmp protocol
+						// will be ignored as icmp is a special case
+						addICPMRule.Do(func(){
+							// icmp needs to be handled as a seperate pool
+							// from port lookup as icmp packets do not have
+							// the a transport header port field
+							rules = append(rules,
+								&nftables.Rule{
+									Table: chain.Table,
+									Chain: chain,
+									Exprs: append(sgExprs,
+										// [ meta load l4proto => reg 1 ]
+										&expr.Meta{Key: expr.MetaKeyL4PROTO, Register: 1},
+										// [ cmp eq reg 1 <protoData> ]
+										&expr.Cmp{
+											Op:       expr.CmpOpEq,
+											Register: 1,
+											Data:     []byte{unix.IPPROTO_ICMP},
+										},
+										// accept
+										&expr.Verdict{
+											// [ immediate reg 0 drop/accept ]
+											Kind: verdict,
+										},
+									),
+								},
+							)
+						})
 
 					} else {
-						addPortVmapRule = true
+						// rule added only once for all port groups
+						addVMapPortRule.Do(func(){
+							if sgPortVmap, err = r.getSecurityGroupPortVMap(vmapName, chain.Table); err == nil {
+								// port filters are added to the port vmap so
+								// the a vmap lookup binding needs to be created
+								rules = append(rules,
+									&nftables.Rule{
+										Table: chain.Table,
+										Chain: chain,
+										Exprs: append(sgExprs,
+											// [ payload load 1b @ network header + <protoOffset> => reg 9 ]
+											&expr.Payload{
+												Len:          1,
+												Base:         expr.PayloadBaseNetworkHeader,
+												Offset:       protoOffset, // Protocol IPv4 / NextHdr IPv6
+												DestRegister: 9,
+											},
+											// [ payload load 2b @ transport header + 2 (dest port) => reg 10 ]
+											&expr.Payload{
+												Len:          2,
+												Base:         expr.PayloadBaseTransportHeader,
+												Offset:       2, // Destination Port
+												DestRegister: 10,
+											},
+											// [ lookup reg 1 map <sgPortVmap> ]
+											&expr.Lookup{
+												SourceRegister: 9,
+												SetName:        sgPortVmap.Name,
+												DestRegister:   0,
+												IsDestRegSet:   true,
+											},
+										),
+									},
+								)
+								
+							} else {
+								logger.ErrorMessage(
+									"Failed to retrieve sgPortVmap for sgKey '%s' with name '%s' for table '%s': %s",
+									sgKey, vmapName, chain.Table.Name, err.Error(),
+								)
+							}
+						})
+						if sgPortVmap == nil {
+							continue
+						}
 
 						for p := pg.FromPort; p <= pg.ToPort; p++ {
 							// key fields should have 4 boundaries
@@ -569,93 +612,22 @@ func (r *packetFilterRouter) SetSecurityGroups(iifName string, sgs []SecurityGro
 							}
 							// destination port
 							copy(keyData[4:], binaryutil.BigEndian.PutUint16(uint16(p)))
-						
-							if sg.Deny {
-								err = r.nft.SetAddElements(sgsPortVmap,
-									[]nftables.SetElement{
-										{
-											Key:         keyData,
-											VerdictData: &expr.Verdict{ Kind: expr.VerdictDrop },
-										},
+
+							if err = r.nft.SetAddElements(sgPortVmap,
+								[]nftables.SetElement{
+									{
+										Key:         keyData,
+										VerdictData: &expr.Verdict{ Kind: verdict },
 									},
-								)
-							} else {
-								err = r.nft.SetAddElements(sgsPortVmap,
-									[]nftables.SetElement{
-										{
-											Key:         keyData,
-											VerdictData: &expr.Verdict{ Kind: expr.VerdictAccept },
-										},
-									},
-								)
-							}
-							if err != nil {
+								},
+							); err != nil {
 								logger.ErrorMessage(
 									"Failed to add port access rule in map '%s' for sgKey '%s' for table '%s': %s",
 									vmapName, sgKey, chain.Table.Name, err.Error(),
 								)
 							}
-						}	
+						}
 					}
-				}
-				// icmp needs to be handled separated from the
-				// port lookup so a separate rule is created
-				// just for icmp
-				if addICMPRule {
-					rules = append(rules,
-						&nftables.Rule{
-							Table: chain.Table,
-							Chain: chain,
-							Exprs: append(sgExprs,
-								// [ meta load l4proto => reg 1 ]
-								&expr.Meta{Key: expr.MetaKeyL4PROTO, Register: 1},
-								// [ cmp eq reg 1 <protoData> ]
-								&expr.Cmp{
-									Op:       expr.CmpOpEq,
-									Register: 1,
-									Data:     []byte{unix.IPPROTO_ICMP},
-								},
-								// accept
-								&expr.Verdict{
-									// [ immediate reg 0 accept ]
-									Kind: expr.VerdictAccept,
-								},
-							),
-						},
-					)
-				}
-				// port filters are added to the port vmap so 
-				// the a vmap lookup binding needs to be created
-				if addPortVmapRule {
-					rules = append(rules,
-						&nftables.Rule{
-							Table: chain.Table,
-							Chain: chain,
-							Exprs: append(sgExprs,
-								// [ payload load 1b @ network header + <protoOffset> => reg 9 ]
-								&expr.Payload{
-									Len:          1,
-									Base:         expr.PayloadBaseNetworkHeader,
-									Offset:       protoOffset, // Protocol IPv4 / NextHdr IPv6
-									DestRegister: 9,
-								},
-								// [ payload load 2b @ transport header + 2 (dest port) => reg 10 ]
-								&expr.Payload{
-									Len:          2,
-									Base:         expr.PayloadBaseTransportHeader,
-									Offset:       2, // Destination Port
-									DestRegister: 10,
-								},
-								// [ lookup reg 1 map <sgsPortVmap> ]
-								&expr.Lookup{
-									SourceRegister: 9,
-									SetName:        sgsPortVmap.Name,
-									DestRegister:   0,
-									IsDestRegSet:   true,
-								},
-							),
-						},
-					)
 				}
 			}
 		}
@@ -671,6 +643,48 @@ func (r *packetFilterRouter) SetSecurityGroups(iifName string, sgs []SecurityGro
 
 func (r *packetFilterRouter) DeleteSecurityGroups(iifName string, sgs []SecurityGroup) error {
 	return nil
+}
+
+func (r *packetFilterRouter) getSecurityGroupPortVMap(vmapName string, table *nftables.Table) (*nftables.Set, error) {
+
+	var (
+		err error
+		ok  bool
+
+		keyType    nftables.SetDatatype
+		sgPortVmap *nftables.Set
+	)
+
+	// get security group port vmap
+	if sgPortVmap, ok = r.sgPortVmaps[vmapName]; !ok {
+
+		if keyType, err = nftables.ConcatSetType(
+			nftables.TypeInetProto,
+			nftables.TypeInetService,
+		); err != nil {
+			logger.ErrorMessage(
+				"Failed to create concat key type for set sgPortVmap with name '%s' for table '%s': %s",
+				vmapName, table.Name, err.Error(),
+			)
+			return nil, err
+		}
+		sgPortVmap = &nftables.Set{
+			Name:          vmapName,
+			Table:         table,
+			IsMap:         true,
+			KeyType:       keyType,
+			DataType:      nftables.TypeVerdict,
+		}
+		if err = r.nft.AddSet(sgPortVmap, nil); err != nil {
+			logger.ErrorMessage(
+				"Failed to add set sgPortVmap with name '%s' for table '%s': %s",
+				vmapName, table.Name, err.Error(),
+			)
+			return nil, err
+		}
+		r.sgPortVmaps[vmapName] = sgPortVmap
+	}
+	return sgPortVmap, nil
 }
 
 func (r *packetFilterRouter) ForwardPort(dstPort int, forwardPort int, forwardIP netip.Addr, proto Protocol) (string, error) {
@@ -1011,7 +1025,7 @@ func (r *packetFilterRouter) saveFilterRules(key string, rules []*nftables.Rule)
 				rules	= rules[:i]
 			} else {
 				rules = nil
-			}	
+			}
 		}
 	}
 	// add rules
@@ -1033,7 +1047,7 @@ func (r *packetFilterRouter) saveFilterRules(key string, rules []*nftables.Rule)
 			}
 			rule.Handle = foundRule.Handle
 		}
-		r.ruleMap[key] = append(r.ruleMap[key], rules...)	
+		r.ruleMap[key] = append(r.ruleMap[key], rules...)
 	}
 	return nil
 }
@@ -1146,7 +1160,7 @@ func findRuleInList(rule *nftables.Rule, ruleList []*nftables.Rule) *nftables.Ru
 		}
 		ruleExprData = append(ruleExprData, exprData)
 	}
-	
+
 	// fmt.Println(debugPrintRule("Looking up rule in list", rule))
 
 	foundRuleC := make(chan *nftables.Rule, len(ruleList))
@@ -1154,9 +1168,9 @@ func findRuleInList(rule *nftables.Rule, ruleList []*nftables.Rule) *nftables.Ru
 
 		// fmt.Println(debugPrintRule("Check match of rule from list", matchRule))
 
-		if matchRule.Flags == rule.Flags && 
+		if matchRule.Flags == rule.Flags &&
 			bytes.Equal(matchRule.UserData, rule.UserData) {
-			
+
 			for i, e := range matchRule.Exprs {
 				if exprData, err = expr.Marshal(byte(matchRule.Table.Family), e); err != nil {
 					logger.ErrorMessage("findRuleInList(): Rule marshal error: %s", err.Error())
@@ -1187,7 +1201,7 @@ func findRuleInList(rule *nftables.Rule, ruleList []*nftables.Rule) *nftables.Ru
 
 // prints rule for debugging
 func debugPrintRule(msg string, rule *nftables.Rule) string {
-	
+
 	var (
 		out bytes.Buffer
 	)
@@ -1195,7 +1209,7 @@ func debugPrintRule(msg string, rule *nftables.Rule) string {
 	fmt.Fprintf(&out, "BEGIN=> %s\n", msg)
 	fmt.Fprintf(&out, "  Rule....: %+v\n", rule)
 	for i, e := range rule.Exprs {
-		fmt.Fprintf(&out, "    expr..:[%d]: %t\n", i, e)		
+		fmt.Fprintf(&out, "    expr..:[%d]: %t\n", i, e)
 	}
 	fmt.Fprintf(&out, "END=> %s", msg)
 	return out.String()

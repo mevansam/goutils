@@ -13,6 +13,7 @@ import (
 
 	"github.com/mevansam/goutils/network"
 	"github.com/mevansam/goutils/run"
+	"github.com/mevansam/goutils/utils"
 
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
@@ -39,24 +40,24 @@ var _ = Describe("Route Manager", func() {
 	Context("creates routes on a new interface", func() {
 
 		BeforeEach(func() {
-			if err = run.RunAsAdminWithArgs([]string{ "/usr/sbin/ip", "link", "add", "wg99", "type", "wireguard" }, &outputBuffer, &outputBuffer); err != nil {			
+			if err = run.RunAsAdminWithArgs([]string{ "/usr/sbin/ip", "link", "add", "wg99", "type", "wireguard" }, &outputBuffer, &outputBuffer); err != nil {
 				Fail(fmt.Sprintf("exec \"/usr/sbin/ip link add wg99 type wireguard\" failed: \n\n%s\n", outputBuffer.String()))
 			}
-	
+
 			nc, err = network.NewNetworkContext()
 			Expect(err).ToNot(HaveOccurred())
 		})
-	
+
 		AfterEach(func() {
 			nc.Clear()
-	
-			if err = run.RunAsAdminWithArgs([]string{ "/usr/sbin/ip", "link", "delete", "dev", "wg99" }, &outputBuffer, &outputBuffer); err != nil {			
+
+			if err = run.RunAsAdminWithArgs([]string{ "/usr/sbin/ip", "link", "delete", "dev", "wg99" }, &outputBuffer, &outputBuffer); err != nil {
 				fmt.Printf("exec \"/usr/sbin/ip link delete dev wg99\" failed: \n\n%s\n", outputBuffer.String())
 			}
 		})
-	
+
 		It("creates a new default gateway with routes that bypass it", func() {
-	
+
 			routeManager, err := nc.NewRouteManager()
 			Expect(err).ToNot(HaveOccurred())
 			err = routeManager.AddExternalRouteToIPs([]string{ "34.204.21.102" })
@@ -65,16 +66,16 @@ var _ = Describe("Route Manager", func() {
 			Expect(err).ToNot(HaveOccurred())
 			err = routableInterface.MakeDefaultRoute()
 			Expect(err).ToNot(HaveOccurred())
-	
+
 			outputBuffer.Reset()
 			err = run.RunAsAdminWithArgs([]string{ "/usr/sbin/ip", "route", "show" }, &outputBuffer, &outputBuffer)
 			Expect(err).ToNot(HaveOccurred())
-	
+
 			fmt.Printf("\n%s\n", outputBuffer.String())
-	
+
 			counter := 0
 			scanner := bufio.NewScanner(bytes.NewReader(outputBuffer.Bytes()))
-	
+
 			var matchRoutes = func(line string) {
 				matched, _ := regexp.MatchString(`^default via 192\.168\.111\.1 dev wg99 $`, line)
 				if matched { counter++; return }
@@ -83,7 +84,7 @@ var _ = Describe("Route Manager", func() {
 				matched, _ = regexp.MatchString(`^192.168.111.0/24 dev wg99 .* link src 192.168.111.2 $`, line)
 				if matched { counter++; return }
 			}
-	
+
 			for scanner.Scan() {
 				line := scanner.Text()
 				matchRoutes(line)
@@ -117,13 +118,13 @@ var _ = Describe("Route Manager", func() {
 			if err = run.RunAsAdminWithArgs([]string{ "/usr/sbin/ip", "addr", "flush", itf2.Name }, &outputBuffer, &outputBuffer); err != nil {
 				Fail(fmt.Sprintf("exec \"/usr/sbin/ip addr flush dev eth1\" failed: \n\n%s\n", outputBuffer.String()))
 			}
-			if err = run.RunAsAdminWithArgs([]string{ "/usr/sbin/ip", "addr", "add", "192.168.10.1/24", "dev", itf2.Name }, &outputBuffer, &outputBuffer); err != nil {			
+			if err = run.RunAsAdminWithArgs([]string{ "/usr/sbin/ip", "addr", "add", "192.168.10.1/24", "dev", itf2.Name }, &outputBuffer, &outputBuffer); err != nil {
 				Fail(fmt.Sprintf("exec \"/usr/sbin/ip addr add 192.168.10.1/24 dev eth1\" failed: \n\n%s\n", outputBuffer.String()))
 			}
 			if err = run.RunAsAdminWithArgs([]string{ "/usr/sbin/ip", "addr", "flush", itf3.Name }, &outputBuffer, &outputBuffer); err != nil {
 				Fail(fmt.Sprintf("exec \"/usr/sbin/ip addr flush dev eth2\" failed: \n\n%s\n", outputBuffer.String()))
 			}
-			if err = run.RunAsAdminWithArgs([]string{ "/usr/sbin/ip", "addr", "add", "192.168.11.1/24", "dev", itf3.Name }, &outputBuffer, &outputBuffer); err != nil {			
+			if err = run.RunAsAdminWithArgs([]string{ "/usr/sbin/ip", "addr", "add", "192.168.11.1/24", "dev", itf3.Name }, &outputBuffer, &outputBuffer); err != nil {
 				Fail(fmt.Sprintf("exec \"/usr/sbin/ip addr add 192.168.11.1/24 dev eth2\" failed: \n\n%s\n", outputBuffer.String()))
 			}
 
@@ -136,17 +137,17 @@ var _ = Describe("Route Manager", func() {
 			}
 			fmt.Println()
 		})
-	
+
 		AfterEach(func() {
 			if skipTests {
 				return
 			}
-	
+
 			nc.Clear()
-			if err = run.RunAsAdminWithArgs([]string{ "/usr/sbin/ip", "addr", "flush", itf2.Name }, &outputBuffer, &outputBuffer); err != nil {			
+			if err = run.RunAsAdminWithArgs([]string{ "/usr/sbin/ip", "addr", "flush", itf2.Name }, &outputBuffer, &outputBuffer); err != nil {
 				fmt.Printf("exec \"/usr/sbin/ip addr flush dev eth1\" failed: \n\n%s\n", outputBuffer.String())
 			}
-			if err = run.RunAsAdminWithArgs([]string{ "/usr/sbin/ip", "addr", "flush", itf3.Name }, &outputBuffer, &outputBuffer); err != nil {			
+			if err = run.RunAsAdminWithArgs([]string{ "/usr/sbin/ip", "addr", "flush", itf3.Name }, &outputBuffer, &outputBuffer); err != nil {
 				fmt.Printf("exec \"/usr/sbin/ip addr flush dev eth2\" failed: \n\n%s\n", outputBuffer.String())
 			}
 		})
@@ -161,7 +162,7 @@ var _ = Describe("Route Manager", func() {
 			_, err = routeManager.NewFilterRouter(true)
 			Expect(err).ToNot(HaveOccurred())
 
-			ritf1, err := routeManager.GetDefaultInterface()            // interface to world 
+			ritf1, err := routeManager.GetDefaultInterface()            // interface to world
 			Expect(err).ToNot(HaveOccurred())
 			ritf2, err := routeManager.GetRoutableInterface(itf2.Name)  // interface to lan1
 			Expect(err).ToNot(HaveOccurred())
@@ -201,14 +202,14 @@ var _ = Describe("Route Manager", func() {
 				regexp.MustCompile(`^\s+iifname "eth1" oifname "eth0" ip saddr 192.168.10.0-192.168.10.255 accept\s*$`),
 				// allow lan2 access to only 8.8.8.8 externally
 				regexp.MustCompile(`^\s+iifname "eth2" oifname "eth0" ip saddr 192.168.11.0-192.168.11.255 ip daddr 8.8.8.8-8.8.8.8 accept\s*$`),
-			}			
+			}
 			natPostRuleMatches := []*regexp.Regexp{
 				// masq lan1 to world
 				regexp.MustCompile(`^\s+oifname "eth0" ip saddr 192.168.10.0-192.168.10.255 masquerade\s*$`),
 				// masq lan2 to only 8.8.8.8 externally
 				regexp.MustCompile(`^\s+oifname "eth0" ip saddr 192.168.11.0-192.168.11.255 ip daddr 8.8.8.8-8.8.8.8 masquerade\s*$`),
 			}
-			
+
 			testAppliedConfig("forward chain rules after config",
 				"nft list ruleset | sed -n '/^table ip mycs_router_ipv4 {/,/^}/p' | sed -n '/chain forward {/,/}/p'",
 				forwardRuleMatches, 5, 0,
@@ -267,13 +268,13 @@ var _ = Describe("Route Manager", func() {
 			natPreRuleMatches := []*regexp.Regexp{
 				// forward 192.168.10.1:8080 to 192.168.11.1:80
 				regexp.MustCompile(`^\s+ip daddr 192.168.10.1 tcp dport 8080 dnat to 192.168.11.10:80\s*$`),
-				// forward incoming requests to 8888 on all interfaces to 192.168.10.10:80 
+				// forward incoming requests to 8888 on all interfaces to 192.168.10.10:80
 				regexp.MustCompile(`^\s+tcp dport 8888 dnat to 192.168.10.10:80\s*$`),
 			}
 			natPostRuleMatches := []*regexp.Regexp{
-				// masq traffic forwarded from 192.168.11.10:8080 to 192.168.11.1:80 
+				// masq traffic forwarded from 192.168.11.10:8080 to 192.168.11.1:80
 				regexp.MustCompile(`^\s+ip daddr 192.168.11.10 masquerade\s*$`),
-				// masq traffic forwarded to 192.168.10.10:80 
+				// masq traffic forwarded to 192.168.10.10:80
 				regexp.MustCompile(`^\s+ip daddr 192.168.10.10 masquerade\s*$`),
 			}
 
@@ -320,8 +321,6 @@ var _ = Describe("Route Manager", func() {
 			filterRouter, err := routeManager.NewFilterRouter(true)
 			Expect(err).ToNot(HaveOccurred())
 
-			ritf1, err := routeManager.GetDefaultInterface()            // interface to world 
-			Expect(err).ToNot(HaveOccurred())
 			ritf2, err := routeManager.GetRoutableInterface(itf2.Name)  // interface to lan1
 			Expect(err).ToNot(HaveOccurred())
 			ritf3, err := routeManager.GetRoutableInterface(itf3.Name)  // interface to lan2
@@ -333,13 +332,13 @@ var _ = Describe("Route Manager", func() {
 					{
 						Proto: network.TCP,
 						FromPort: 22,
-						ToPort: 22,	
+						ToPort: 22,
 					},
 				},
 			}
-			err = filterRouter.SetSecurityGroups(ritf1.Name(), []network.SecurityGroup{allowSSH})
+			err = filterRouter.SetSecurityGroups("", []network.SecurityGroup{allowSSH})
 			Expect(err).ToNot(HaveOccurred())
-			denyHTTPto11 := network.SecurityGroup{
+			denyMultipleTo11 := network.SecurityGroup{
 				Deny: true,
 				SrcNetwork: netip.MustParsePrefix("192.168.10.10/24"),
 				DstNetwork: netip.MustParsePrefix("192.168.11.10/24"),
@@ -347,18 +346,26 @@ var _ = Describe("Route Manager", func() {
 					{
 						Proto: network.TCP,
 						FromPort: 80,
-						ToPort: 80,	
+						ToPort: 80,
+					},
+					{
+						Proto: network.TCP,
+						FromPort: 22,
+						ToPort: 22,
+					},
+					{
+						Proto: network.ICMP,
 					},
 				},
 			}
-			allowICMPath1 := network.SecurityGroup{
+			allowICMToItf2 := network.SecurityGroup{
 				Ports: []network.PortGroup{
 					{
 						Proto: network.ICMP,
 					},
 				},
 			}
-			err = ritf2.SetSecurityGroups([]network.SecurityGroup{allowICMPath1,denyHTTPto11})
+			err = ritf2.SetSecurityGroups([]network.SecurityGroup{allowICMToItf2,denyMultipleTo11})
 			Expect(err).ToNot(HaveOccurred())
 			denyHTTPto10 := network.SecurityGroup{
 				Deny: true,
@@ -367,18 +374,18 @@ var _ = Describe("Route Manager", func() {
 					{
 						Proto: network.TCP,
 						FromPort: 80,
-						ToPort: 80,	
+						ToPort: 80,
 					},
 				},
 			}
-			allowICMPath2 := network.SecurityGroup{
+			allowICMToItf3 := network.SecurityGroup{
 				Ports: []network.PortGroup{
 					{
 						Proto: network.ICMP,
 					},
 				},
 			}
-			err = ritf3.SetSecurityGroups([]network.SecurityGroup{allowICMPath2,denyHTTPto10})
+			err = ritf3.SetSecurityGroups([]network.SecurityGroup{allowICMToItf3,denyHTTPto10})
 			Expect(err).ToNot(HaveOccurred())
 
 			// forward packets from lan1 to lan2 (ip v4)
@@ -390,7 +397,59 @@ var _ = Describe("Route Manager", func() {
 
 			showNftRuleset()
 
-			time.Sleep(time.Second * 30) // increase to pause for manual validation			
+			vmNameForAllowSSHip4 := getPortGroupVmapName("", allowSSH, 0)
+			vmNameForDenyMultipleTo11 := getPortGroupVmapName(ritf2.Name(), denyMultipleTo11, 0)
+			vmNameForDenyHTTPto10 := getPortGroupVmapName(ritf3.Name(), denyHTTPto10, 0)
+
+			inputRuleMatches := []*regexp.Regexp{
+				regexp.MustCompile(`^\s+type filter hook input priority filter; policy drop;\s*$`),
+				regexp.MustCompile(`^\s+ct state vmap @ctstate\s*$`),
+				regexp.MustCompile(`^\s+iifname vmap @inbound_ifname\s*$`),
+				regexp.MustCompile(`^\s+ip protocol . th dport vmap @`+vmNameForAllowSSHip4+`\s*$`),
+			}
+			forwardRuleMatches := []*regexp.Regexp{
+				regexp.MustCompile(`^\s+type filter hook forward priority filter; policy drop;\s*$`),
+				regexp.MustCompile(`^\s+ct state vmap @ctstate\s*$`),
+				regexp.MustCompile(`^\s+iifname "eth1" ip saddr 192.168.10.0-192.168.10.255 ip daddr 192.168.11.0-192.168.11.255 ip protocol . th dport vmap @`+vmNameForDenyMultipleTo11+`\s*$`),
+				regexp.MustCompile(`^\s+iifname "eth1" ip saddr 192.168.10.0-192.168.10.255 ip daddr 192.168.11.0-192.168.11.255 meta l4proto icmp drop\s*$`),
+				regexp.MustCompile(`^\s+iifname "eth2" ip daddr 192.168.10.0-192.168.10.255 ip protocol . th dport vmap @`+vmNameForDenyHTTPto10+`\s*$`),
+				// routing between lan1 to lan2
+				regexp.MustCompile(`^\s+iifname "eth1" oifname "eth2" ip saddr 192.168.10.0-192.168.10.255 ip daddr 192.168.11.0-192.168.11.255 accept\s*$`),
+				regexp.MustCompile(`^\s+iifname "eth2" oifname "eth1" ip saddr 192.168.11.0-192.168.11.255 ip daddr 192.168.10.0-192.168.10.255 accept\s*$`),
+			}
+			inboundItf2Matches := []*regexp.Regexp{
+				regexp.MustCompile(`^\s+meta l4proto icmp accept\s*$`),
+			}
+			inboundItf3Matches := []*regexp.Regexp{
+				regexp.MustCompile(`^\s+meta l4proto icmp accept\s*$`),
+			}
+
+			testAppliedConfig("input chain rules after config",
+				"nft list ruleset | sed -n '/^table ip mycs_router_ipv4 {/,/^}/p' | sed -n '/chain input {/,/}/p'",
+				inputRuleMatches, 4, 0,
+			)
+			testAppliedConfig("forward chain rules after config",
+				"nft list ruleset | sed -n '/^table ip mycs_router_ipv4 {/,/^}/p' | sed -n '/chain forward {/,/}/p'",
+				forwardRuleMatches, 7, 0,
+			)
+			testAppliedConfig("inbound eth1 chain rules after config",
+				"nft list ruleset | sed -n '/^table ip mycs_router_ipv4 {/,/^}/p' | sed -n '/chain inbound_eth1 {/,/}/p'",
+				inboundItf2Matches, 1, 0,
+			)
+			testAppliedConfig("inbound eth2 chain rules after config",
+				"nft list ruleset | sed -n '/^table ip mycs_router_ipv4 {/,/^}/p' | sed -n '/chain inbound_eth2 {/,/}/p'",
+				inboundItf3Matches, 1, 0,
+			)
+			testPorts(vmNameForAllowSSHip4, allowSSH, true)
+			testPorts(vmNameForDenyMultipleTo11, denyMultipleTo11, true)
+			testPorts(vmNameForDenyHTTPto10, denyHTTPto10, true)
+
+			time.Sleep(time.Second * 15) // increase to pause for manual validation
+
+			// ===> sgs = sgs_35c1d81aef51f14a_0 =>[{"tcp" '\x16' '\x16'}]
+			// ===> sgs = sgs_35c1d81aef51f14a_1 =>[{"tcp" '\x16' '\x16'}]
+			// ===> sgs_eth1_192.168.10.10/24_192.168.11.10/24 = sgs_ce378a1a48967324_0 =>[{"tcp" 'P' 'P'} {"tcp" '\x16' '\x16'} {"icmp" '\x00' '\x00'}]
+			// ===> sgs_eth2_192.168.10.10/24 = sgs_10b229b64bbecd31_0 =>[{"tcp" 'P' 'P'}]
 		})
 	})
 })
@@ -408,10 +467,66 @@ func showNftRuleset() {
 	fmt.Printf("\n# ip route show\n=====\n%s=====\n", outputBuffer.String())
 
 	outputBuffer.Reset()
-	err = run.RunAsAdminWithArgs([]string{ 
-		"/bin/sh", "-c", 
+	err = run.RunAsAdminWithArgs([]string{
+		"/bin/sh", "-c",
 		"nft list ruleset",
 	}, &outputBuffer, &outputBuffer)
 	Expect(err).ToNot(HaveOccurred())
-	fmt.Printf("\n# nft list ruleset\n=====\n%s=====\n\n", outputBuffer.String())	
+	fmt.Printf("\n# nft list ruleset\n=====\n%s=====\n\n", outputBuffer.String())
+}
+
+func getPortGroupVmapName(iifName string, sg network.SecurityGroup, table int) string {
+
+	var (
+		sgKey bytes.Buffer
+	)
+
+	sgKey.WriteString("sgs")
+	if len(iifName) > 0 {
+		sgKey.WriteByte('_')
+		sgKey.WriteString(iifName)
+	}
+	if sg.SrcNetwork.IsValid() {
+		sgKey.WriteByte('_')
+		sgKey.WriteString(sg.SrcNetwork.String())
+	}
+	if sg.DstNetwork.IsValid() {
+		sgKey.WriteByte('_')
+		sgKey.WriteString(sg.DstNetwork.String())
+	}
+
+	vmapName, err := utils.HashString(sgKey.String(), "sgs", table)
+	Expect(err).ToNot(HaveOccurred())
+	fmt.Printf("===> %s\n", vmapName)
+	return vmapName
+}
+
+func testPorts(vmapName string, sg network.SecurityGroup, isSet bool) {
+
+	verdict := "accept"
+	if sg.Deny {
+		verdict = "drop"
+	}
+
+	portMatches := []*regexp.Regexp{}
+	numMatches := 0
+	for _, pg := range sg.Ports {
+		if pg.Proto != network.ICMP {
+			for p := pg.FromPort; p <= pg.ToPort; p++ {
+				portMatches = append(portMatches, regexp.MustCompile(fmt.Sprintf("%s . %d : %s", pg.Proto, p, verdict)))
+				numMatches++
+			}
+		}
+	}
+	if isSet {
+		testAppliedConfig("inbound eth2 chain rules after config",
+			"nft list ruleset | sed -n '/^table ip mycs_router_ipv4 {/,/^}/p' | sed -n '/map "+vmapName+" {/,/}/p'",
+			portMatches, numMatches, 0,
+		)
+	} else {
+		testAppliedConfig("inbound eth2 chain rules after config",
+			"nft list ruleset | sed -n '/^table ip mycs_router_ipv4 {/,/^}/p' | sed -n '/map "+vmapName+" {/,/}/p'",
+			portMatches, 0, numMatches,
+		)		
+	}
 }
