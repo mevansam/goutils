@@ -73,6 +73,7 @@ type RoutableInterface interface {
 	MakeDefaultRoute() error
 
 	SetSecurityGroups(sgs []SecurityGroup) error
+	DeleteSecurityGroups(sgs []SecurityGroup) error
 
 	ForwardPortTo(proto Protocol, dstPort int, forwardPort int, forwardIP netip.Addr) error
 	DeletePortForwardedTo(proto Protocol, dstPort int, forwardPort int, forwardIP netip.Addr) error

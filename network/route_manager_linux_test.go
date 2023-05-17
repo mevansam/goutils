@@ -13,11 +13,12 @@ import (
 
 	"github.com/mevansam/goutils/network"
 	"github.com/mevansam/goutils/run"
-	"github.com/mevansam/goutils/utils"
 
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
 )
+
+const manualValidationPauseSecs = 1
 
 var _ = Describe("Route Manager", func() {
 
@@ -218,7 +219,7 @@ var _ = Describe("Route Manager", func() {
 				"nft list ruleset | sed -n '/^table ip mycs_router_ipv4 {/,/^}/p' | sed -n '/chain nat_postrouting {/,/}/p'",
 				natPostRuleMatches, 2, 0,
 			)
-			time.Sleep(time.Second * 15) // increase to pause for manual validation
+			time.Sleep(time.Second * manualValidationPauseSecs) // increase to pause for manual validation
 
 			// delete forwarding rules
 			err = ritf1.DeleteTrafficForwardedFrom(ritf3, network.LAN4, "8.8.8.8/32")
@@ -232,7 +233,7 @@ var _ = Describe("Route Manager", func() {
 				"nft list ruleset | sed -n '/^table ip mycs_router_ipv4 {/,/^}/p' | sed -n '/chain nat_postrouting {/,/}/p'",
 				natPostRuleMatches, 1, 1,
 			)
-			time.Sleep(time.Second * 15) // increase to pause for manual validation
+			time.Sleep(time.Second * manualValidationPauseSecs) // increase to pause for manual validation
 		})
 
 		It("forwards a port to another host", func() {
@@ -290,7 +291,7 @@ var _ = Describe("Route Manager", func() {
 				"nft list ruleset | sed -n '/^table ip mycs_router_ipv4 {/,/^}/p' | sed -n '/chain nat_postrouting {/,/}/p'",
 				natPostRuleMatches, 2, 0,
 			)
-			time.Sleep(time.Second * 15) // increase to pause for manual validation
+			time.Sleep(time.Second * manualValidationPauseSecs) // increase to pause for manual validation
 
 			// delete port forwarding rules
 			err = ritf2.DeletePortForwardedTo(network.TCP, 8080, 80, netip.MustParseAddr("192.168.11.10"))
@@ -308,10 +309,10 @@ var _ = Describe("Route Manager", func() {
 				"nft list ruleset | sed -n '/^table ip mycs_router_ipv4 {/,/^}/p' | sed -n '/chain nat_postrouting {/,/}/p'",
 				natPostRuleMatches, 1, 1,
 			)
-			time.Sleep(time.Second * 15) // increase to pause for manual validation
+			time.Sleep(time.Second * manualValidationPauseSecs) // increase to pause for manual validation
 		})
 
-		FIt("applies firewall rules using security groups", func() {
+		It("applies firewall rules using security groups", func() {
 			if skipTests {
 				fmt.Println("No second interface so skipping test \"creates a NAT route on an interface\"...")
 			}
@@ -337,6 +338,27 @@ var _ = Describe("Route Manager", func() {
 				},
 			}
 			err = filterRouter.SetSecurityGroups("", []network.SecurityGroup{allowSSH})
+			Expect(err).ToNot(HaveOccurred())
+			allowCustom := network.SecurityGroup{
+				Ports: []network.PortGroup{
+					{
+						Proto: network.TCP,
+						FromPort: 34080,
+						ToPort: 34080,
+					},
+					{
+						Proto: network.TCP,
+						FromPort: 34443,
+						ToPort: 34443,
+					},
+					{
+						Proto: network.UDP,
+						FromPort: 35555,
+						ToPort: 35555,
+					},
+				},
+			}
+			err = filterRouter.SetSecurityGroups("", []network.SecurityGroup{allowCustom})
 			Expect(err).ToNot(HaveOccurred())
 			denyMultipleTo11 := network.SecurityGroup{
 				Deny: true,
@@ -397,22 +419,23 @@ var _ = Describe("Route Manager", func() {
 
 			showNftRuleset()
 
-			vmNameForAllowSSHip4 := getPortGroupVmapName("", allowSSH, 0)
-			vmNameForDenyMultipleTo11 := getPortGroupVmapName(ritf2.Name(), denyMultipleTo11, 0)
-			vmNameForDenyHTTPto10 := getPortGroupVmapName(ritf3.Name(), denyHTTPto10, 0)
+			_, vmNameForAllowSSHip4, _ := allowSSH.CreateSecurityGroupKeys("")
+			_, vmNameForAllowCustomip4, _ := allowCustom.CreateSecurityGroupKeys("")
+			_, vmNameForDenyMultipleTo11, _ := denyMultipleTo11.CreateSecurityGroupKeys(ritf2.Name())
+			_, vmNameForDenyHTTPto10, _ := denyHTTPto10.CreateSecurityGroupKeys(ritf3.Name())
 
 			inputRuleMatches := []*regexp.Regexp{
 				regexp.MustCompile(`^\s+type filter hook input priority filter; policy drop;\s*$`),
 				regexp.MustCompile(`^\s+ct state vmap @ctstate\s*$`),
 				regexp.MustCompile(`^\s+iifname vmap @inbound_ifname\s*$`),
-				regexp.MustCompile(`^\s+ip protocol . th dport vmap @`+vmNameForAllowSSHip4+`\s*$`),
+				regexp.MustCompile(`^\s+ip protocol . th dport vmap @`+vmNameForAllowSSHip4[0]+`\s*$`),
 			}
 			forwardRuleMatches := []*regexp.Regexp{
 				regexp.MustCompile(`^\s+type filter hook forward priority filter; policy drop;\s*$`),
 				regexp.MustCompile(`^\s+ct state vmap @ctstate\s*$`),
-				regexp.MustCompile(`^\s+iifname "eth1" ip saddr 192.168.10.0-192.168.10.255 ip daddr 192.168.11.0-192.168.11.255 ip protocol . th dport vmap @`+vmNameForDenyMultipleTo11+`\s*$`),
+				regexp.MustCompile(`^\s+iifname "eth1" ip saddr 192.168.10.0-192.168.10.255 ip daddr 192.168.11.0-192.168.11.255 ip protocol . th dport vmap @`+vmNameForDenyMultipleTo11[0]+`\s*$`),
 				regexp.MustCompile(`^\s+iifname "eth1" ip saddr 192.168.10.0-192.168.10.255 ip daddr 192.168.11.0-192.168.11.255 meta l4proto icmp drop\s*$`),
-				regexp.MustCompile(`^\s+iifname "eth2" ip daddr 192.168.10.0-192.168.10.255 ip protocol . th dport vmap @`+vmNameForDenyHTTPto10+`\s*$`),
+				regexp.MustCompile(`^\s+iifname "eth2" ip daddr 192.168.10.0-192.168.10.255 ip protocol . th dport vmap @`+vmNameForDenyHTTPto10[0]+`\s*$`),
 				// routing between lan1 to lan2
 				regexp.MustCompile(`^\s+iifname "eth1" oifname "eth2" ip saddr 192.168.10.0-192.168.10.255 ip daddr 192.168.11.0-192.168.11.255 accept\s*$`),
 				regexp.MustCompile(`^\s+iifname "eth2" oifname "eth1" ip saddr 192.168.11.0-192.168.11.255 ip daddr 192.168.10.0-192.168.10.255 accept\s*$`),
@@ -440,16 +463,53 @@ var _ = Describe("Route Manager", func() {
 				"nft list ruleset | sed -n '/^table ip mycs_router_ipv4 {/,/^}/p' | sed -n '/chain inbound_eth2 {/,/}/p'",
 				inboundItf3Matches, 1, 0,
 			)
-			testPorts(vmNameForAllowSSHip4, allowSSH, true)
-			testPorts(vmNameForDenyMultipleTo11, denyMultipleTo11, true)
-			testPorts(vmNameForDenyHTTPto10, denyHTTPto10, true)
+			testPorts(vmNameForAllowSSHip4[0], allowSSH, true)
+			testPorts(vmNameForAllowCustomip4[0], allowCustom, true)
+			testPorts(vmNameForDenyMultipleTo11[0], denyMultipleTo11, true)
+			testPorts(vmNameForDenyHTTPto10[0], denyHTTPto10, true)
 
-			time.Sleep(time.Second * 15) // increase to pause for manual validation
+			time.Sleep(time.Second * manualValidationPauseSecs) // increase to pause for manual validation
 
-			// ===> sgs = sgs_35c1d81aef51f14a_0 =>[{"tcp" '\x16' '\x16'}]
-			// ===> sgs = sgs_35c1d81aef51f14a_1 =>[{"tcp" '\x16' '\x16'}]
-			// ===> sgs_eth1_192.168.10.10/24_192.168.11.10/24 = sgs_ce378a1a48967324_0 =>[{"tcp" 'P' 'P'} {"tcp" '\x16' '\x16'} {"icmp" '\x00' '\x00'}]
-			// ===> sgs_eth2_192.168.10.10/24 = sgs_10b229b64bbecd31_0 =>[{"tcp" 'P' 'P'}]
+			// delete a security group that has overlapping rules
+			err = filterRouter.DeleteSecurityGroups("", []network.SecurityGroup{allowCustom})
+			Expect(err).ToNot(HaveOccurred())
+
+			testPorts(vmNameForAllowSSHip4[0], allowSSH, true)
+			testPorts(vmNameForAllowCustomip4[0], allowCustom, false)
+
+			testAppliedConfig("input chain rules after delete",
+				"nft list ruleset | sed -n '/^table ip mycs_router_ipv4 {/,/^}/p' | sed -n '/chain input {/,/}/p'",
+				inputRuleMatches, 4, 0,
+			)
+
+			// completely delete all overlapping rules
+			err = filterRouter.DeleteSecurityGroups("", []network.SecurityGroup{allowSSH})
+			Expect(err).ToNot(HaveOccurred())
+
+			testPorts(vmNameForAllowSSHip4[0], allowSSH, false)
+			testPorts(vmNameForAllowCustomip4[0], allowCustom, false)
+
+			testAppliedConfig("input chain rules after delete",
+				"nft list ruleset | sed -n '/^table ip mycs_router_ipv4 {/,/^}/p' | sed -n '/chain input {/,/}/p'",
+				inputRuleMatches, 3, 1,
+			)
+
+			// delete another couple of rules
+			err = ritf2.DeleteSecurityGroups([]network.SecurityGroup{allowICMToItf2,denyMultipleTo11})
+			Expect(err).ToNot(HaveOccurred())
+
+			testPorts(vmNameForDenyMultipleTo11[0], denyMultipleTo11, false)
+
+			testAppliedConfig("forward chain rules after config",
+				"nft list ruleset | sed -n '/^table ip mycs_router_ipv4 {/,/^}/p' | sed -n '/chain forward {/,/}/p'",
+				forwardRuleMatches, 5, 2,
+			)
+			testAppliedConfig("inbound eth1 chain rules after config",
+				"nft list ruleset | sed -n '/^table ip mycs_router_ipv4 {/,/^}/p' | sed -n '/chain inbound_eth1 {/,/}/p'",
+				inboundItf2Matches, 0, 1,
+			)
+
+			time.Sleep(time.Second * manualValidationPauseSecs) // increase to pause for manual validation
 		})
 	})
 })
@@ -475,32 +535,6 @@ func showNftRuleset() {
 	fmt.Printf("\n# nft list ruleset\n=====\n%s=====\n\n", outputBuffer.String())
 }
 
-func getPortGroupVmapName(iifName string, sg network.SecurityGroup, table int) string {
-
-	var (
-		sgKey bytes.Buffer
-	)
-
-	sgKey.WriteString("sgs")
-	if len(iifName) > 0 {
-		sgKey.WriteByte('_')
-		sgKey.WriteString(iifName)
-	}
-	if sg.SrcNetwork.IsValid() {
-		sgKey.WriteByte('_')
-		sgKey.WriteString(sg.SrcNetwork.String())
-	}
-	if sg.DstNetwork.IsValid() {
-		sgKey.WriteByte('_')
-		sgKey.WriteString(sg.DstNetwork.String())
-	}
-
-	vmapName, err := utils.HashString(sgKey.String(), "sgs", table)
-	Expect(err).ToNot(HaveOccurred())
-	fmt.Printf("===> %s\n", vmapName)
-	return vmapName
-}
-
 func testPorts(vmapName string, sg network.SecurityGroup, isSet bool) {
 
 	verdict := "accept"
@@ -519,12 +553,12 @@ func testPorts(vmapName string, sg network.SecurityGroup, isSet bool) {
 		}
 	}
 	if isSet {
-		testAppliedConfig("inbound eth2 chain rules after config",
+		testAppliedConfig(fmt.Sprintf("values present test for vmap %s", vmapName),
 			"nft list ruleset | sed -n '/^table ip mycs_router_ipv4 {/,/^}/p' | sed -n '/map "+vmapName+" {/,/}/p'",
 			portMatches, numMatches, 0,
 		)
 	} else {
-		testAppliedConfig("inbound eth2 chain rules after config",
+		testAppliedConfig(fmt.Sprintf("values not present test for vmap %s", vmapName),
 			"nft list ruleset | sed -n '/^table ip mycs_router_ipv4 {/,/^}/p' | sed -n '/map "+vmapName+" {/,/}/p'",
 			portMatches, 0, numMatches,
 		)		

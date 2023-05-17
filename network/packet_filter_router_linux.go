@@ -31,6 +31,7 @@ type packetFilterRouter struct {
 
 	setMap  map[string]*nftables.Set
 	ruleMap map[string][]*nftables.Rule
+	ruleRef map[string]int
 }
 
 const (
@@ -57,9 +58,10 @@ func (m *routeManager) NewFilterRouter(denyAll bool) (FilterRouter, error) {
 
 		inboundIFNameVmap : make([]*nftables.Set, 2),
 		inboundChains     : make(map[string][]*nftables.Chain),
-		sgPortVmaps      : make(map[string]*nftables.Set),
+		sgPortVmaps       : make(map[string]*nftables.Set),
 
 		ruleMap : make(map[string][]*nftables.Rule),
+		ruleRef : make(map[string]int),
 	}
 
 	r.table[0] = r.nft.AddTable(&nftables.Table{
@@ -362,9 +364,10 @@ func (r *packetFilterRouter) SetSecurityGroups(iifName string, sgs []SecurityGro
 	var (
 		err error
 
-		sgKeyB bytes.Buffer
+		sgKey      string
+		pgVmapName []string
 
-		vmapName   string
+		keyData    []byte
 		sgPortVmap *nftables.Set
 
 		verdict expr.VerdictKind
@@ -372,17 +375,18 @@ func (r *packetFilterRouter) SetSecurityGroups(iifName string, sgs []SecurityGro
 	)
 
 	for _, sg := range sgs {
+		logger.TraceMessage("packetFilterRouter.SetSecurityGroups(): Applying security group: %# v", sg)
 
 		// validate sg
 		if sg.SrcNetwork.IsValid() && sg.DstNetwork.IsValid() && sg.SrcNetwork.Addr().Is4() != sg.DstNetwork.Addr().Is4() {
-			logger.ErrorMessage("Cannot mix ipv4 and ipv6 types for SrcNetwork and DstNetwork: %# v", sg)
+			logger.ErrorMessage("packetFilterRouter.SetSecurityGroups(): Cannot mix ipv4 and ipv6 types for SrcNetwork and DstNetwork: %# v", sg)
 			continue
 		}
-
-		logger.TraceMessage("packetFilterRouter.SetSecurityGroups(): Applying security group: %# v", sg)
-
-		sgKeyB.Reset()
-		sgKeyB.WriteString("sgs")
+		// get sg keys
+		if sgKey, pgVmapName, err = sg.CreateSecurityGroupKeys(iifName); err != nil {
+			logger.ErrorMessage("packetFilterRouter.SetSecurityGroups(): Error creating security group keys: %s", err.Error())
+			continue
+		}
 
 		sgExprsPre := []expr.Any{}
 
@@ -399,15 +403,12 @@ func (r *packetFilterRouter) SetSecurityGroups(iifName string, sgs []SecurityGro
 		targetChain := r.getChain(filterForward)
 
 		if len(iifName) > 0 {
-			sgKeyB.WriteByte('_')
-			sgKeyB.WriteString(iifName)
-
 			if !sg.DstNetwork.IsValid() {
 				// if interface name is set and no dst network then
 				// sg filter will be added to the inbound chain for
 				// that interface
 				if targetChain, err = r.getInboundChain(iifName); err != nil {
-					logger.ErrorMessage("Failed to get/create inbound chain for interface '%s': %s", iifName, err.Error())
+					logger.ErrorMessage("packetFilterRouter.SetSecurityGroups(): Failed to get/create inbound chain for interface '%s': %s", iifName, err.Error())
 					continue
 				}
 
@@ -433,8 +434,8 @@ func (r *packetFilterRouter) SetSecurityGroups(iifName string, sgs []SecurityGro
 		// unless otherwise determined below
 		addToChain := []bool{ true, true }
 		if sg.SrcNetwork.IsValid() || sg.DstNetwork.IsValid() {
-			addToChain[0] = sg.SrcNetwork.Addr().Is4() || sg.DstNetwork.Addr().Is4() // apply rules only to ip4 chain
-			addToChain[1] = sg.SrcNetwork.Addr().Is6() || sg.DstNetwork.Addr().Is6() // apply rules only to ip6 chain
+			addToChain[0] = sg.SrcNetwork.Addr().Is4() || sg.DstNetwork.Addr().Is4() // apply rules to ip4 chain
+			addToChain[1] = sg.SrcNetwork.Addr().Is6() || sg.DstNetwork.Addr().Is6() // apply rules to ip6 chain
 		}
 
 		// set rule verdict for security group
@@ -443,17 +444,6 @@ func (r *packetFilterRouter) SetSecurityGroups(iifName string, sgs []SecurityGro
 		} else {
 			verdict = expr.VerdictAccept
 		}
-
-		// the sg rule reference key
-		if sg.SrcNetwork.IsValid() {
-			sgKeyB.WriteByte('_')
-			sgKeyB.WriteString(sg.SrcNetwork.String())
-		}
-		if sg.DstNetwork.IsValid() {
-			sgKeyB.WriteByte('_')
-			sgKeyB.WriteString(sg.DstNetwork.String())
-		}
-		sgKey := sgKeyB.String()
 
 		for i, chain := range targetChain {
 			sgExprs := sgExprsPre
@@ -502,11 +492,6 @@ func (r *packetFilterRouter) SetSecurityGroups(iifName string, sgs []SecurityGro
 					)
 				}
 
-				if vmapName, err = utils.HashString(sgKey, "sgs", i); err != nil {
-					logger.ErrorMessage("Failed to create hash for sgKey '%s': %s", sgKey, err.Error())
-					continue
-				}
-
 				// add port filter rules to vmap
 				for _, pg := range sg.Ports {
 
@@ -544,7 +529,7 @@ func (r *packetFilterRouter) SetSecurityGroups(iifName string, sgs []SecurityGro
 					} else {
 						// rule added only once for all port groups
 						addVMapPortRule.Do(func(){
-							if sgPortVmap, err = r.getSecurityGroupPortVMap(vmapName, chain.Table); err == nil {
+							if sgPortVmap, err = r.getSecurityGroupPortVMap(pgVmapName[i], chain.Table); err == nil {
 								// port filters are added to the port vmap so
 								// the a vmap lookup binding needs to be created
 								rules = append(rules,
@@ -579,40 +564,23 @@ func (r *packetFilterRouter) SetSecurityGroups(iifName string, sgs []SecurityGro
 								
 							} else {
 								logger.ErrorMessage(
-									"Failed to retrieve sgPortVmap for sgKey '%s' with name '%s' for table '%s': %s",
-									sgKey, vmapName, chain.Table.Name, err.Error(),
+									"packetFilterRouter.SetSecurityGroups(): Failed to retrieve security group port vmap with name '%s' for table '%s': %s",
+									 pgVmapName[i], chain.Table.Name, err.Error(),
 								)
 							}
 						})
 						if sgPortVmap == nil {
 							continue
 						}
-
 						for p := pg.FromPort; p <= pg.ToPort; p++ {
-							// key fields should have 4 boundaries
-							//
-							// byte[0..3] => protocol
-							// byte[4..7] => port
-							//
-							keyData := make([]byte, 8)
-							// protocol
-							switch pg.Proto {
-							case ICMP:
-								keyData[0] = unix.IPPROTO_ICMP
-							case TCP:
-								keyData[0] = unix.IPPROTO_TCP
-							case UDP:
-								keyData[0] = unix.IPPROTO_UDP
-							default:
+							
+							if keyData, err = createPortVMapKeyData(pg.Proto, p); err != nil {
 								logger.ErrorMessage(
-									"Unsupported protocol '%s' for port access rule in map '%s' for sgKey '%s' for table '%s': %s",
-									string(pg.Proto), vmapName, sgKey, chain.Table.Name, err.Error(),
+									"packetFilterRouter.SetSecurityGroups(): Unable to create key data for port access rule in map '%s' for table '%s': %s",
+									pgVmapName[i], chain.Table.Name, err.Error(),
 								)
 								continue
 							}
-							// destination port
-							copy(keyData[4:], binaryutil.BigEndian.PutUint16(uint16(p)))
-
 							if err = r.nft.SetAddElements(sgPortVmap,
 								[]nftables.SetElement{
 									{
@@ -622,18 +590,18 @@ func (r *packetFilterRouter) SetSecurityGroups(iifName string, sgs []SecurityGro
 								},
 							); err != nil {
 								logger.ErrorMessage(
-									"Failed to add port access rule in map '%s' for sgKey '%s' for table '%s': %s",
-									vmapName, sgKey, chain.Table.Name, err.Error(),
+									"packetFilterRouter.SetSecurityGroups(): Failed to add port access rule in map '%s' for table '%s': %s",
+									pgVmapName[i], chain.Table.Name, err.Error(),
 								)
 							}
 						}
 					}
 				}
 			}
-		}
+		}		
 		if err = r.saveFilterRules(sgKey, rules); err != nil {
 			logger.ErrorMessage(
-				"Failed to create security group filter rule with sgKey '%s': %s",
+				"packetFilterRouter.SetSecurityGroups(): Failed to create security group filter rule with sgKey '%s': %s",
 				sgKey, err.Error(),
 			)
 		}
@@ -642,6 +610,123 @@ func (r *packetFilterRouter) SetSecurityGroups(iifName string, sgs []SecurityGro
 }
 
 func (r *packetFilterRouter) DeleteSecurityGroups(iifName string, sgs []SecurityGroup) error {
+
+	var (
+		err error
+		ok  bool
+
+		sgKey      string
+		pgVmapName []string
+
+		keyData    []byte
+		sgPortVmap *nftables.Set
+		elements   []nftables.SetElement
+
+		vmapsTouched []*nftables.Set
+	)
+
+	for _, sg := range sgs {
+
+		// get sg keys
+		if sgKey, pgVmapName, err = sg.CreateSecurityGroupKeys(iifName); err != nil {
+			logger.ErrorMessage("packetFilterRouter.DeleteSecurityGroups(): Error creating security group keys: %s", err.Error())
+			continue
+		}
+
+		verdict := expr.VerdictAccept
+		if sg.Deny {
+			verdict = expr.VerdictDrop
+		}
+
+		if _, ok = r.ruleMap[sgKey]; ok {
+
+			deleteFromTable:= []bool{ true, true }
+			if sg.SrcNetwork.IsValid() || sg.DstNetwork.IsValid() {
+				deleteFromTable[0] = sg.SrcNetwork.Addr().Is4() || sg.DstNetwork.Addr().Is4() // look for port group vmaps in ip4 table
+				deleteFromTable[1] = sg.SrcNetwork.Addr().Is6() || sg.DstNetwork.Addr().Is6() // look for port group vmaps in ip6 table
+			}
+
+			for i, table := range r.table {
+				if deleteFromTable[i] {
+
+					if sgPortVmap, err = r.getSecurityGroupPortVMap(pgVmapName[i], nil); sgPortVmap != nil {						
+						for _, pg := range sg.Ports {
+
+							if pg.Proto != ICMP {
+								for p := pg.FromPort; p <= pg.ToPort; p++ {
+									if keyData, err = createPortVMapKeyData(pg.Proto, p); err != nil {
+										logger.ErrorMessage(
+											"packetFilterRouter.DeleteSecurityGroups(): Unable to create key data for port access rule in map '%s' for table '%s': %s",
+											pgVmapName[i], table.Name, err.Error(),
+										)										
+										continue
+									}
+									if err = r.nft.SetDeleteElements(sgPortVmap,
+										[]nftables.SetElement{
+											{
+												Key:         keyData,
+												VerdictData: &expr.Verdict{ Kind: verdict },
+											},
+										},
+									); err != nil {
+										logger.ErrorMessage(
+											"packetFilterRouter.DeleteSecurityGroups(): Failed to delete port access rule in map '%s' for table '%s': %s",
+											pgVmapName[i], table.Name, err.Error(),
+										)
+									}
+								}
+							}
+						}
+						vmapsTouched = append(vmapsTouched, sgPortVmap)						
+
+					} else if err != nil {
+						logger.ErrorMessage(
+							"No security group port vmap set found for sgKey '%s' with name '%s' for table '%s': %s",
+							sgKey, pgVmapName[i], table.Name, err.Error(),
+						)
+					}
+				}
+			}
+			if err = r.DeleteFilter(sgKey); err != nil {
+				logger.ErrorMessage(
+					"packetFilterRouter.DeleteSecurityGroups(): Failed to delete security group with key '%s': %s",
+					sgKey, err.Error(),
+				)
+				continue
+			}
+
+			// Delete any port group vmaps that were touched that have no elements
+			flush := false
+			for _, sgPortVmap = range vmapsTouched {
+				if elements, err = r.nft.GetSetElements(sgPortVmap); err != nil {
+					logger.ErrorMessage(
+						"packetFilterRouter.DeleteSecurityGroups(): Failed to get list of remaining elements for port group vmap '%s': %s",
+						sgPortVmap.Name, err.Error(),
+					)
+					continue
+				}
+				if len(elements) == 0 {
+					r.nft.DelSet(sgPortVmap)
+					flush = true
+				}
+			}
+			if flush {
+				if err = r.nft.Flush(); err != nil {
+					logger.ErrorMessage(
+						"packetFilterRouter.DeleteSecurityGroups(): Failed to delete empty maps that were associated with security group key '%s': %s",
+						sgKey, err.Error(),
+					)
+				}
+			}
+
+		} else {
+			return fmt.Errorf(
+				"no filter rules associated for the security group with key '%s': %+v",
+				sgKey, sg,
+			)
+		}
+	}
+
 	return nil
 }
 
@@ -656,7 +741,7 @@ func (r *packetFilterRouter) getSecurityGroupPortVMap(vmapName string, table *nf
 	)
 
 	// get security group port vmap
-	if sgPortVmap, ok = r.sgPortVmaps[vmapName]; !ok {
+	if sgPortVmap, ok = r.sgPortVmaps[vmapName]; !ok && table != nil {
 
 		if keyType, err = nftables.ConcatSetType(
 			nftables.TypeInetProto,
@@ -1011,26 +1096,14 @@ func (r *packetFilterRouter) saveFilterRules(key string, rules []*nftables.Rule)
 		foundRule  *nftables.Rule
 	)
 
-	// remove duplicate rules
-	lr := len(rules)-1
-	for i := lr; i >= 0; i-- {
-		rule := rules[i]
+	// add rules that do not already exist
+	for _, rule := range rules {
 		if savedRules, err = r.nft.GetRules(rule.Table, rule.Chain); err != nil {
 			return err
 		}
-		if foundRule = findRuleInList(rule, savedRules); foundRule != nil {
-			if i < lr {
-				rules = append(rules[:i], rules[i+1:]...)
-			} else if i == lr {
-				rules	= rules[:i]
-			} else {
-				rules = nil
-			}
+		if foundRule = findRuleInList(rule, savedRules); foundRule == nil {
+			r.nft.AddRule(rule)
 		}
-	}
-	// add rules
-	for _, rule := range rules {
-		r.nft.AddRule(rule)
 	}
 	// flush rules
 	if err = r.nft.Flush(); err != nil {
@@ -1046,6 +1119,9 @@ func (r *packetFilterRouter) saveFilterRules(key string, rules []*nftables.Rule)
 				return fmt.Errorf("a saved rule instance was not found for rule with key '%s': %+v", key, rule)
 			}
 			rule.Handle = foundRule.Handle
+
+			ruleRefKey := fmt.Sprintf("%s_%d", rule.Table.Name, rule.Handle)
+			r.ruleRef[ruleRefKey] = r.ruleRef[ruleRefKey]+1
 		}
 		r.ruleMap[key] = append(r.ruleMap[key], rules...)
 	}
@@ -1055,20 +1131,29 @@ func (r *packetFilterRouter) saveFilterRules(key string, rules []*nftables.Rule)
 func (r *packetFilterRouter) DeleteFilter(key string) error {
 
 	var (
-		err       error
-		ok, flush bool
-
+		err   error
+		ok    bool
 		rules []*nftables.Rule
 	)
 
 	if rules, ok = r.ruleMap[key]; ok {
 		for _, rule := range rules {
-			if err = r.nft.DelRule(rule); err != nil {
-				return err
+			// delete rule only when its ref count
+			// is zero. this ensures any shared rules
+			// are not deleted
+			ruleRefKey := fmt.Sprintf("%s_%d", rule.Table.Name, rule.Handle)
+			ruleRefCount := r.ruleRef[ruleRefKey]
+			if ruleRefCount == 1 {
+				if err = r.nft.DelRule(rule); err != nil {
+					return err
+				}	
+				delete(r.ruleRef, ruleRefKey)
+
+			} else {
+				r.ruleRef[ruleRefKey] = r.ruleRef[ruleRefKey]-1
 			}
 		}
 		delete(r.ruleMap, key)
-		flush = true
 
 	} else {
 		return fmt.Errorf(
@@ -1077,11 +1162,7 @@ func (r *packetFilterRouter) DeleteFilter(key string) error {
 		)
 	}
 
-	if flush {
-		return r.nft.Flush()
-	} else {
-		return nil
-	}
+	return r.nft.Flush()
 }
 
 func (r *packetFilterRouter) Clear() {
@@ -1100,6 +1181,89 @@ func (r *packetFilterRouter) Clear() {
 		r.table = nil
 		r.chains = nil
 	}
+}
+
+func (r *packetFilterRouter) String() string {
+
+	var (
+		out bytes.Buffer
+	)
+
+	fmt.Fprintln(&out, "Packet Filter State\n===================")
+	fmt.Fprintf(&out, "\nSaved Rule Map:\n\n")
+	for key, rules := range r.ruleMap {
+		fmt.Fprintf(&out, "Rule Key: %s\n", key)
+		for _, rule := range rules {
+			fmt.Fprintf(&out, "..Rule: [ table: %s, chain: %s, handle: %d ]\n", rule.Table.Name, rule.Chain.Name, rule.Handle)
+			for i, e := range rule.Exprs {
+				fmt.Fprintf(&out, "....expr:[%d]: %t\n", i, e)
+			}
+		}
+	}
+	fmt.Fprintf(&out, "\nSaved handles\n")
+	for handle, refCount := range r.ruleRef { 
+		fmt.Fprintf(&out, "- %s : %d ", handle, refCount)
+		for key, rules := range r.ruleMap { 
+			for _, rule := range rules  {
+				if handle == fmt.Sprintf("%s_%d", rule.Table.Name, rule.Handle) { 
+					fmt.Fprintf(&out, " (%s)", key) 
+				}
+			}
+		}
+		fmt.Fprintln(&out)
+	}
+	return out.String()
+}
+
+// security group functions
+
+func (sg SecurityGroup) CreateSecurityGroupKeys(iifName string) (string, []string, error) {
+
+	var (
+		err error
+
+		sgKeyB            bytes.Buffer
+		sgKey, pgVmapName string
+	)
+
+	if len(iifName) > 0 {
+		sgKeyB.WriteByte('_')
+		sgKeyB.WriteString(iifName)
+	}
+	if sg.SrcNetwork.IsValid() {
+		sgKeyB.WriteByte('_')
+		sgKeyB.WriteString(sg.SrcNetwork.String())
+	}
+	if sg.DstNetwork.IsValid() {
+		sgKeyB.WriteByte('_')
+		sgKeyB.WriteString(sg.DstNetwork.String())
+	}
+
+	if pgVmapName, err = utils.HashString(sgKeyB.String(), "sgs"); err != nil {
+		return "", nil,
+			fmt.Errorf(
+				"failed to create port group vmap name from sgKey signature prefix '%s': %s", 
+				sgKeyB.String(), err.Error(),
+			)
+	}
+	for _, pg := range sg.Ports {
+		sgKeyB.WriteByte('-')
+		sgKeyB.Write([]byte(pg.Proto))
+		if pg.Proto != ICMP {
+				// add to sgKey signature
+				fmt.Fprintf(&sgKeyB, ".%d-%d", pg.FromPort, pg.ToPort)
+		}
+	}
+	if sgKey, err = utils.HashString(sgKeyB.String(), "sgs"); err != nil {
+		return "", nil,
+			fmt.Errorf(
+				"failed to create to sgKey from sgKey signature '%s': %s", 
+				sgKeyB.String(), err.Error(),
+			)
+	}
+	return sgKey, 
+		[]string{ pgVmapName+"_0", pgVmapName+"_1" },
+		nil
 }
 
 // helper functions
@@ -1161,12 +1325,8 @@ func findRuleInList(rule *nftables.Rule, ruleList []*nftables.Rule) *nftables.Ru
 		ruleExprData = append(ruleExprData, exprData)
 	}
 
-	// fmt.Println(debugPrintRule("Looking up rule in list", rule))
-
 	foundRuleC := make(chan *nftables.Rule, len(ruleList))
 	checkRuleMatch := func(rule, matchRule *nftables.Rule, ruleExprData [][]byte) {
-
-		// fmt.Println(debugPrintRule("Check match of rule from list", matchRule))
 
 		if matchRule.Flags == rule.Flags &&
 			bytes.Equal(matchRule.UserData, rule.UserData) {
@@ -1195,8 +1355,30 @@ func findRuleInList(rule *nftables.Rule, ruleList []*nftables.Rule) *nftables.Ru
 			break
 		}
 	}
-	// fmt.Printf("Found rule: %+v\n", foundRule)
 	return foundRule
+}
+
+func createPortVMapKeyData(proto Protocol, port int) ([]byte, error) {
+	// key fields should have 4 boundaries
+	//
+	// byte[0..3] => protocol
+	// byte[4..7] => port
+	//
+	keyData := make([]byte, 8)
+	// protocol
+	switch proto {
+	case ICMP:
+		keyData[0] = unix.IPPROTO_ICMP
+	case TCP:
+		keyData[0] = unix.IPPROTO_TCP
+	case UDP:
+		keyData[0] = unix.IPPROTO_UDP
+	default:
+		return nil, fmt.Errorf("unsupported protocol: %s", string(proto))
+	}
+	// destination port
+	copy(keyData[4:], binaryutil.BigEndian.PutUint16(uint16(port)))
+	return keyData, nil
 }
 
 // prints rule for debugging

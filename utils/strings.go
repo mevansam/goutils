@@ -245,7 +245,7 @@ func RandomString(n int) string {
 	return string(b)
 }
 
-func HashString(s, prefix string, index int) (string, error) {
+func HashString(s, prefix string) (string, error) {
 
 	var (
 		err  error
@@ -260,7 +260,7 @@ func HashString(s, prefix string, index int) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return fmt.Sprintf("%s_%s_%d", prefix, hex.EncodeToString(hash.Sum(nil)), index), nil
+	return fmt.Sprintf("%s_%s", prefix, hex.EncodeToString(hash.Sum(nil))), nil
 }
 
 func ExtractMatches(buffer []byte, patterns map[string]*regexp.Regexp) map[string][][]string {
