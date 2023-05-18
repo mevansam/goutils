@@ -197,18 +197,18 @@ var _ = Describe("Route Manager", func() {
 			forwardRuleMatches := []*regexp.Regexp{
 				regexp.MustCompile(`^\s+ct state vmap @ctstate\s*$`),
 				// routing between lan1 to lan2
-				regexp.MustCompile(`^\s+iifname "eth1" oifname "eth2" ip saddr 192.168.10.0-192.168.10.255 ip daddr 192.168.11.0-192.168.11.255 accept\s*$`),
-				regexp.MustCompile(`^\s+iifname "eth2" oifname "eth1" ip saddr 192.168.11.0-192.168.11.255 ip daddr 192.168.10.0-192.168.10.255 accept\s*$`),
+				regexp.MustCompile(`^\s+iifname "eth1" oifname "eth2" ip saddr 192.168.10.0/24 ip daddr 192.168.11.0/24 accept\s*$`),
+				regexp.MustCompile(`^\s+iifname "eth2" oifname "eth1" ip saddr 192.168.11.0/24 ip daddr 192.168.10.0/24 accept\s*$`),
 				// allow lan1 access to internet
-				regexp.MustCompile(`^\s+iifname "eth1" oifname "eth0" ip saddr 192.168.10.0-192.168.10.255 accept\s*$`),
+				regexp.MustCompile(`^\s+iifname "eth1" oifname "eth0" ip saddr 192.168.10.0/24 accept\s*$`),
 				// allow lan2 access to only 8.8.8.8 externally
-				regexp.MustCompile(`^\s+iifname "eth2" oifname "eth0" ip saddr 192.168.11.0-192.168.11.255 ip daddr 8.8.8.8-8.8.8.8 accept\s*$`),
+				regexp.MustCompile(`^\s+iifname "eth2" oifname "eth0" ip saddr 192.168.11.0/24 ip daddr 8.8.8.8 accept\s*$`),
 			}
 			natPostRuleMatches := []*regexp.Regexp{
 				// masq lan1 to world
-				regexp.MustCompile(`^\s+oifname "eth0" ip saddr 192.168.10.0-192.168.10.255 masquerade\s*$`),
+				regexp.MustCompile(`^\s+oifname "eth0" ip saddr 192.168.10.0/24 masquerade\s*$`),
 				// masq lan2 to only 8.8.8.8 externally
-				regexp.MustCompile(`^\s+oifname "eth0" ip saddr 192.168.11.0-192.168.11.255 ip daddr 8.8.8.8-8.8.8.8 masquerade\s*$`),
+				regexp.MustCompile(`^\s+oifname "eth0" ip saddr 192.168.11.0/24 ip daddr 8.8.8.8 masquerade\s*$`),
 			}
 
 			testAppliedConfig("forward chain rules after config",
@@ -433,12 +433,12 @@ var _ = Describe("Route Manager", func() {
 			forwardRuleMatches := []*regexp.Regexp{
 				regexp.MustCompile(`^\s+type filter hook forward priority filter; policy drop;\s*$`),
 				regexp.MustCompile(`^\s+ct state vmap @ctstate\s*$`),
-				regexp.MustCompile(`^\s+iifname "eth1" ip saddr 192.168.10.0-192.168.10.255 ip daddr 192.168.11.0-192.168.11.255 ip protocol . th dport vmap @`+vmNameForDenyMultipleTo11[0]+`\s*$`),
-				regexp.MustCompile(`^\s+iifname "eth1" ip saddr 192.168.10.0-192.168.10.255 ip daddr 192.168.11.0-192.168.11.255 meta l4proto icmp drop\s*$`),
-				regexp.MustCompile(`^\s+iifname "eth2" ip daddr 192.168.10.0-192.168.10.255 ip protocol . th dport vmap @`+vmNameForDenyHTTPto10[0]+`\s*$`),
+				regexp.MustCompile(`^\s+iifname "eth1" ip saddr 192.168.10.0/24 ip daddr 192.168.11.0/24 ip protocol . th dport vmap @`+vmNameForDenyMultipleTo11[0]+`\s*$`),
+				regexp.MustCompile(`^\s+iifname "eth1" ip saddr 192.168.10.0/24 ip daddr 192.168.11.0/24 meta l4proto icmp drop\s*$`),
+				regexp.MustCompile(`^\s+iifname "eth2" ip daddr 192.168.10.0/24 ip protocol . th dport vmap @`+vmNameForDenyHTTPto10[0]+`\s*$`),
 				// routing between lan1 to lan2
-				regexp.MustCompile(`^\s+iifname "eth1" oifname "eth2" ip saddr 192.168.10.0-192.168.10.255 ip daddr 192.168.11.0-192.168.11.255 accept\s*$`),
-				regexp.MustCompile(`^\s+iifname "eth2" oifname "eth1" ip saddr 192.168.11.0-192.168.11.255 ip daddr 192.168.10.0-192.168.10.255 accept\s*$`),
+				regexp.MustCompile(`^\s+iifname "eth1" oifname "eth2" ip saddr 192.168.10.0/24 ip daddr 192.168.11.0/24 accept\s*$`),
+				regexp.MustCompile(`^\s+iifname "eth2" oifname "eth1" ip saddr 192.168.11.0/24 ip daddr 192.168.10.0/24 accept\s*$`),
 			}
 			inboundItf2Matches := []*regexp.Regexp{
 				regexp.MustCompile(`^\s+meta l4proto icmp accept\s*$`),

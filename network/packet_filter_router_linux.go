@@ -5,13 +5,13 @@ package network
 import (
 	"bytes"
 	"fmt"
+	"net"
 	"net/netip"
 	"sync"
 
 	"github.com/google/nftables"
 	"github.com/google/nftables/binaryutil"
 	"github.com/google/nftables/expr"
-	"go4.org/netipx"
 	"golang.org/x/sys/unix"
 
 	"github.com/mevansam/goutils/logger"
@@ -454,7 +454,7 @@ func (r *packetFilterRouter) SetSecurityGroups(iifName string, sgs []SecurityGro
 				addrLen, srcOffset, destOffset, protoOffset := ipHeaderOffsets(i == 0)
 
 				if sg.SrcNetwork.IsValid() {
-					srcNetworkRange := netipx.RangeOfPrefix(sg.SrcNetwork)
+					srcNetworkMask := net.CIDRMask(sg.SrcNetwork.Bits(), int(addrLen)*8)
 					sgExprs = append(sgExprs,
 						// [ payload load 4b @ network header + 12 (src addr) => reg 1 ]
 						&expr.Payload{
@@ -463,17 +463,24 @@ func (r *packetFilterRouter) SetSecurityGroups(iifName string, sgs []SecurityGro
 							Offset:       srcOffset,
 							Len:          addrLen,
 						},
-						// [ range neq reg 1 <src network min> - <src network max> ]
-						&expr.Range{
+						// [ bitwise reg 1 = (reg=1 & <srcNetwork Mask> ) ^ 0x00000000 ]
+						&expr.Bitwise{
+							SourceRegister: 1,
+							DestRegister:   1,
+							Len:            addrLen,
+							Mask:           []byte(srcNetworkMask),
+							Xor:            make([]byte, addrLen),
+						},
+						// [ cmp eq reg 1 <srcNetwork in canonical form> ]
+						&expr.Cmp{
 							Op:       expr.CmpOpEq,
 							Register: 1,
-							FromData: srcNetworkRange.From().AsSlice(),
-							ToData:   srcNetworkRange.To().AsSlice(),
+							Data:     sg.SrcNetwork.Masked().Addr().AsSlice(),
 						},
 					)
 				}
 				if sg.DstNetwork.IsValid() {
-					dstNetworkRange := netipx.RangeOfPrefix(sg.DstNetwork)
+					dstNetworkMask := net.CIDRMask(sg.DstNetwork.Bits(), int(addrLen)*8)
 					sgExprs = append(sgExprs,
 						// [ payload load 4b @ network header + 16 (dest addr) => reg 1 ]
 						&expr.Payload{
@@ -482,12 +489,19 @@ func (r *packetFilterRouter) SetSecurityGroups(iifName string, sgs []SecurityGro
 							Offset:       destOffset,
 							Len:          addrLen,
 						},
-						// [ range neq reg 1 <src network min> - <src network max> ]
-						&expr.Range{
+						// [ bitwise reg 1 = (reg=1 & dstNetwork Mask> ) ^ 0x00000000 ]
+						&expr.Bitwise{
+							SourceRegister: 1,
+							DestRegister:   1,
+							Len:            addrLen,
+							Mask:           []byte(dstNetworkMask),
+							Xor:            make([]byte, addrLen),
+						},
+						// [ cmp eq reg 1 <dstNetwork in canonical form> ]
+						&expr.Cmp{
 							Op:       expr.CmpOpEq,
 							Register: 1,
-							FromData: dstNetworkRange.From().AsSlice(),
-							ToData:   dstNetworkRange.To().AsSlice(),
+							Data:     sg.DstNetwork.Masked().Addr().AsSlice(),
 						},
 					)
 				}
@@ -971,7 +985,7 @@ func (r *packetFilterRouter) ForwardTraffic(srcItfName, dstItfName string, srcNe
 	oifname := []byte(dstItfName+"\x00")
 
 	// ip saddr <srcNetwork> ip daddr <dstNetwork>
-	srcNetworkRange := netipx.RangeOfPrefix(srcNetwork)
+	srcNetworkMask := net.CIDRMask(srcNetwork.Bits(), int(addrLen)*8)
 	ipSrcDstExprs := []expr.Any{
 		// [ payload load 4b @ network header + 12 (src addr) => reg 1 ]
 		&expr.Payload{
@@ -980,16 +994,23 @@ func (r *packetFilterRouter) ForwardTraffic(srcItfName, dstItfName string, srcNe
 			Offset:       srcOffset,
 			Len:          addrLen,
 		},
-		// [ range neq reg 1 <src network min> - <src network max> ]
-		&expr.Range{
+		// [ bitwise reg 1 = (reg=1 & <srcNetwork Mask> ) ^ 0x00000000 ]
+		&expr.Bitwise{
+			SourceRegister: 1,
+			DestRegister:   1,
+			Len:            addrLen,
+			Mask:           []byte(srcNetworkMask),
+			Xor:            make([]byte, addrLen),
+		},
+		// [ cmp eq reg 1 <srcNetwork in canonical form> ]
+		&expr.Cmp{
 			Op:       expr.CmpOpEq,
 			Register: 1,
-			FromData: srcNetworkRange.From().AsSlice(),
-			ToData:   srcNetworkRange.To().AsSlice(),
+			Data:     srcNetwork.Masked().Addr().AsSlice(),
 		},
 	}
 	if dstNetwork != prefixWorld4 && dstNetwork != prefixWorld6 {
-		dstNetworkRange := netipx.RangeOfPrefix(dstNetwork)
+		dstNetworkMask := net.CIDRMask(dstNetwork.Bits(), int(addrLen)*8)
 		ipSrcDstExprs = append(ipSrcDstExprs,
 			// [ payload load 4b @ network header + 16 (dest addr) => reg 1 ]
 			&expr.Payload{
@@ -998,12 +1019,19 @@ func (r *packetFilterRouter) ForwardTraffic(srcItfName, dstItfName string, srcNe
 				Offset:       destOffset,
 				Len:          addrLen,
 			},
-			// [ range neq reg 1 <src network min> - <src network max> ]
-			&expr.Range{
+			// [ bitwise reg 1 = (reg=1 & dstNetwork Mask> ) ^ 0x00000000 ]
+			&expr.Bitwise{
+				SourceRegister: 1,
+				DestRegister:   1,
+				Len:            addrLen,
+				Mask:           []byte(dstNetworkMask),
+				Xor:            make([]byte, addrLen),
+			},
+			// [ cmp eq reg 1 <dstNetwork in canonical form> ]
+			&expr.Cmp{
 				Op:       expr.CmpOpEq,
 				Register: 1,
-				FromData: dstNetworkRange.From().AsSlice(),
-				ToData:   dstNetworkRange.To().AsSlice(),
+				Data:     dstNetwork.Masked().Addr().AsSlice(),
 			},
 		)
 	}
@@ -1070,7 +1098,6 @@ func (r *packetFilterRouter) ForwardTraffic(srcItfName, dstItfName string, srcNe
 		)
 	}
 
-	// retrieve rules saved to table so they can be deleted if required
 	ruleKey := fmt.Sprintf("%s:%s>%s:%s",
 		srcItfName, srcNetwork.String(),
 		dstItfName, dstNetwork.String(),
