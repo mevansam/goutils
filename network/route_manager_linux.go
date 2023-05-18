@@ -299,11 +299,11 @@ func (i *routableInterface) MakeDefaultRoute() error {
 }
 
 func (i *routableInterface) SetSecurityGroups(sgs []SecurityGroup) error {
-	return i.m.pfr.SetSecurityGroups(i.link.Attrs().Name, sgs)
+	return i.m.pfr.SetSecurityGroups(sgs, i.link.Attrs().Name)
 }
 
 func (i *routableInterface) DeleteSecurityGroups(sgs []SecurityGroup) error {
-	return i.m.pfr.DeleteSecurityGroups(i.link.Attrs().Name, sgs)
+	return i.m.pfr.DeleteSecurityGroups(sgs, i.link.Attrs().Name)
 }
 
 func (i *routableInterface) ForwardPortTo(proto Protocol, dstPort int, forwardPort int, forwardIP netip.Addr) error {

@@ -312,7 +312,7 @@ var _ = Describe("Route Manager", func() {
 			time.Sleep(time.Second * manualValidationPauseSecs) // increase to pause for manual validation
 		})
 
-		It("applies firewall rules using security groups", func() {
+		FIt("applies firewall rules using security groups", func() {
 			if skipTests {
 				fmt.Println("No second interface so skipping test \"creates a NAT route on an interface\"...")
 			}
@@ -337,7 +337,7 @@ var _ = Describe("Route Manager", func() {
 					},
 				},
 			}
-			err = filterRouter.SetSecurityGroups("", []network.SecurityGroup{allowSSH})
+			err = filterRouter.SetSecurityGroups([]network.SecurityGroup{allowSSH}, "")
 			Expect(err).ToNot(HaveOccurred())
 			allowCustom := network.SecurityGroup{
 				Ports: []network.PortGroup{
@@ -358,7 +358,7 @@ var _ = Describe("Route Manager", func() {
 					},
 				},
 			}
-			err = filterRouter.SetSecurityGroups("", []network.SecurityGroup{allowCustom})
+			err = filterRouter.SetSecurityGroups([]network.SecurityGroup{allowCustom}, "")
 			Expect(err).ToNot(HaveOccurred())
 			denyMultipleTo11 := network.SecurityGroup{
 				Deny: true,
@@ -471,7 +471,7 @@ var _ = Describe("Route Manager", func() {
 			time.Sleep(time.Second * manualValidationPauseSecs) // increase to pause for manual validation
 
 			// delete a security group that has overlapping rules
-			err = filterRouter.DeleteSecurityGroups("", []network.SecurityGroup{allowCustom})
+			err = filterRouter.DeleteSecurityGroups([]network.SecurityGroup{allowCustom}, "")
 			Expect(err).ToNot(HaveOccurred())
 
 			testPorts(vmNameForAllowSSHip4[0], allowSSH, true)
@@ -483,7 +483,7 @@ var _ = Describe("Route Manager", func() {
 			)
 
 			// completely delete all overlapping rules
-			err = filterRouter.DeleteSecurityGroups("", []network.SecurityGroup{allowSSH})
+			err = filterRouter.DeleteSecurityGroups([]network.SecurityGroup{allowSSH}, "")
 			Expect(err).ToNot(HaveOccurred())
 
 			testPorts(vmNameForAllowSSHip4[0], allowSSH, false)

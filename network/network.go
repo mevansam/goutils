@@ -92,8 +92,8 @@ type FilterRouter interface {
 	WhiteListIPs(ips []netip.Addr) (string, error)
 	DeleteWhiteListIPs(ips []netip.Addr) error
 
-	SetSecurityGroups(iifName string, sgs []SecurityGroup) error
-	DeleteSecurityGroups(iifName string, sgs []SecurityGroup) error
+	SetSecurityGroups(sgs []SecurityGroup, iifName string) error
+	DeleteSecurityGroups(sgs []SecurityGroup, iifName string) error
 
 	ForwardPort(dstPort, forwardPort int, forwardIP netip.Addr, proto Protocol) (string, error)
 	DeleteForwardPort(dstPort, forwardPort int, forwardIP netip.Addr, proto Protocol) error

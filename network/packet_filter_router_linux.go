@@ -329,7 +329,7 @@ func (r *packetFilterRouter) DeleteWhiteListIPs(ips []netip.Addr) error {
 	return nil
 }
 
-func (r *packetFilterRouter) SetSecurityGroups(iifName string, sgs []SecurityGroup) error {
+func (r *packetFilterRouter) SetSecurityGroups(sgs []SecurityGroup, iifName string) error {
 
 	// chain inbound_<itf_name>
 	//
@@ -623,7 +623,7 @@ func (r *packetFilterRouter) SetSecurityGroups(iifName string, sgs []SecurityGro
 	return nil
 }
 
-func (r *packetFilterRouter) DeleteSecurityGroups(iifName string, sgs []SecurityGroup) error {
+func (r *packetFilterRouter) DeleteSecurityGroups(sgs []SecurityGroup, iifName string) error {
 
 	var (
 		err error
