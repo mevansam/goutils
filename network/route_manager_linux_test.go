@@ -11,6 +11,8 @@ import (
 	"regexp"
 	"time"
 
+	"github.com/google/nftables"
+
 	"github.com/mevansam/goutils/network"
 	"github.com/mevansam/goutils/run"
 
@@ -155,7 +157,7 @@ var _ = Describe("Route Manager", func() {
 
 		It("creates routes between interfaces and NATs out", func() {
 			if skipTests {
-				fmt.Println("No second interface so skipping test \"creates a NAT route on an interface\"...")
+				fmt.Println("No second interface so skipping test \"creates routes between interfaces and NATs out\"...")
 			}
 
 			routeManager, err := nc.NewRouteManager()
@@ -238,7 +240,7 @@ var _ = Describe("Route Manager", func() {
 
 		It("forwards a port to another host", func() {
 			if skipTests {
-				fmt.Println("No second interface so skipping test \"creates a NAT route on an interface\"...")
+				fmt.Println("No second interface so skipping test \"forwards a port to another host\"...")
 			}
 
 			routeManager, err := nc.NewRouteManager()
@@ -312,9 +314,9 @@ var _ = Describe("Route Manager", func() {
 			time.Sleep(time.Second * manualValidationPauseSecs) // increase to pause for manual validation
 		})
 
-		FIt("applies firewall rules using security groups", func() {
+		It("applies firewall rules using security groups", func() {
 			if skipTests {
-				fmt.Println("No second interface so skipping test \"creates a NAT route on an interface\"...")
+				fmt.Println("No second interface so skipping test \"applies firewall rules using security groups\"...")
 			}
 
 			routeManager, err := nc.NewRouteManager()
@@ -511,6 +513,117 @@ var _ = Describe("Route Manager", func() {
 
 			time.Sleep(time.Second * manualValidationPauseSecs) // increase to pause for manual validation
 		})
+
+		It("creates a deny list by ip address", func() {
+			if skipTests {
+				fmt.Println("No second interface so skipping test \"creates a deny list by ip address\"...")
+			}
+
+			routeManager, err := nc.NewRouteManager()
+			Expect(err).ToNot(HaveOccurred())
+			filterRouter, err := routeManager.NewFilterRouter(false)
+			Expect(err).ToNot(HaveOccurred())
+
+			// time.Sleep(time.Second * 5)
+
+			denyList := []netip.Addr{
+				netip.MustParseAddr("192.168.11.10"),
+				netip.MustParseAddr("192.168.11.11"),
+				netip.MustParseAddr("fd36:a851:bdf7:078d::10"),
+				netip.MustParseAddr("fd36:a851:bdf7:078d::11"),
+				netip.MustParseAddr("192.168.11.12"),
+				netip.MustParseAddr("fd36:a851:bdf7:078d::100"),
+				netip.MustParseAddr("192.168.11.13"),
+				netip.MustParseAddr("fd36:a851:bdf7:078d::101"),
+			}
+			err = filterRouter.AddIPsToDenyList(denyList)
+			Expect(err).ToNot(HaveOccurred())
+
+			showNftRuleset()
+			testIPSetElements("ip_denylist", denyList)
+
+			time.Sleep(time.Second * manualValidationPauseSecs) // increase to pause for manual validation
+
+			err = filterRouter.DeleteIPsFromDenyList([]netip.Addr{
+				netip.MustParseAddr("192.168.11.10"),
+				netip.MustParseAddr("fd36:a851:bdf7:078d::11"),
+				netip.MustParseAddr("192.168.11.12"),
+				netip.MustParseAddr("192.168.11.13"),
+				netip.MustParseAddr("fd36:a851:bdf7:078d::101"),
+			})
+			Expect(err).ToNot(HaveOccurred())
+
+			showNftRuleset()
+			testIPSetElements("ip_denylist", []netip.Addr{
+				netip.MustParseAddr("192.168.11.11"),
+				netip.MustParseAddr("fd36:a851:bdf7:078d::10"),
+				netip.MustParseAddr("fd36:a851:bdf7:078d::100"),
+			})
+
+			err = filterRouter.DeleteIPsFromDenyList([]netip.Addr{
+				netip.MustParseAddr("192.168.11.11"),
+				netip.MustParseAddr("fd36:a851:bdf7:078d::10"),
+				netip.MustParseAddr("fd36:a851:bdf7:078d::100"),
+			})
+			Expect(err).ToNot(HaveOccurred())
+
+			showNftRuleset()
+			testIPSetElements("ip_denylist", []netip.Addr{})
+		})
+
+		It("creates a allow list by ip address", func() {
+			if skipTests {
+				fmt.Println("No second interface so skipping test \"creates an allow list by ip address\"...")
+			}
+
+			routeManager, err := nc.NewRouteManager()
+			Expect(err).ToNot(HaveOccurred())
+			filterRouter, err := routeManager.NewFilterRouter(false)
+			Expect(err).ToNot(HaveOccurred())
+
+			// time.Sleep(time.Second * 5)
+
+			allowList := []netip.Addr{
+				netip.MustParseAddr("192.168.100.2"),
+				netip.MustParseAddr("fd36:a851:bdf7:078d::10"),
+				netip.MustParseAddr("192.168.11.10"),
+				netip.MustParseAddr("192.168.10.11"),
+				netip.MustParseAddr("fd36:a851:bdf7:078d::11"),
+				netip.MustParseAddr("192.168.11.12"),
+				netip.MustParseAddr("fd36:a851:bdf7:078d::100"),
+				netip.MustParseAddr("fd36:a851:bdf7:078d::101"),
+			}
+			err = filterRouter.AddIPsToAllowList(allowList)
+			Expect(err).ToNot(HaveOccurred())
+
+			showNftRuleset()
+			testIPSetElements("ip_allowlist", allowList)
+
+			time.Sleep(time.Second * manualValidationPauseSecs) // increase to pause for manual validation
+
+			err = filterRouter.DeleteIPsFromAllowList([]netip.Addr{
+				netip.MustParseAddr("192.168.11.10"),
+				netip.MustParseAddr("192.168.10.11"),
+				netip.MustParseAddr("fd36:a851:bdf7:078d::100"),
+				netip.MustParseAddr("fd36:a851:bdf7:078d::101"),
+			})
+			Expect(err).ToNot(HaveOccurred())
+			remainingIPs := []netip.Addr{
+				netip.MustParseAddr("192.168.100.2"),
+				netip.MustParseAddr("fd36:a851:bdf7:078d::10"),
+				netip.MustParseAddr("fd36:a851:bdf7:078d::11"),
+				netip.MustParseAddr("192.168.11.12"),
+			}
+
+			showNftRuleset()
+			testIPSetElements("ip_allowlist", remainingIPs)
+
+			err = filterRouter.DeleteIPsFromAllowList(remainingIPs)
+			Expect(err).ToNot(HaveOccurred())
+
+			showNftRuleset()
+			testIPSetElements("ip_allowlist", []netip.Addr{})
+		})
 	})
 })
 
@@ -563,4 +676,77 @@ func testPorts(vmapName string, sg network.SecurityGroup, isSet bool) {
 			portMatches, 0, numMatches,
 		)		
 	}
+}
+
+func testIPSetElements(setName string, ips []netip.Addr) {
+
+	nfc, err := nftables.New(nftables.AsLasting())
+	Expect(err).ToNot(HaveOccurred())
+
+	ipsByType := make([][]netip.Addr, 2)
+	for _, ip := range ips {
+		if ip.Is4() {
+			ipsByType[0] = append(ipsByType[0], ip)
+		} else {
+			ipsByType[1] = append(ipsByType[1], ip)
+		}
+	}
+
+	tables := getMycsNftTables(nfc)
+	for i, table := range tables {
+		set := getMycsNftSets(nfc, table, setName)
+		elems, err := nfc.GetSetElements(set)
+		Expect(err).ToNot(HaveOccurred())
+		Expect(len(elems)).To(Equal(len(ipsByType[i])))
+		for _, elem := range elems {						
+			for j, ip := range ipsByType[i] {
+				if bytes.Equal(elem.Key, ip.AsSlice()) {
+					// remove found element
+					ipsByType[i] = append(ipsByType[i][:j], ipsByType[i][j+1:]...)
+				}
+			}
+		}
+		Expect(len(ipsByType[i])).To(Equal(0))
+	}
+}
+
+func getMycsNftTables(nfc *nftables.Conn) []*nftables.Table {
+
+	mycsTables := make([]*nftables.Table, 2)
+
+	tables, err := nfc.ListTablesOfFamily(nftables.TableFamilyIPv4)
+	Expect(err).ToNot(HaveOccurred())
+	for _, table := range tables {
+		if table.Name == `mycs_router_ipv4` { 
+			mycsTables[0] = table
+			break
+	 	}
+	}
+	Expect(mycsTables[0]).ToNot(BeNil())
+
+	tables, err = nfc.ListTablesOfFamily(nftables.TableFamilyIPv6)
+	Expect(err).ToNot(HaveOccurred())
+	for _, table := range tables {
+		if table.Name == `mycs_router_ipv6` { 
+			mycsTables[1] = table
+			break
+		}
+	}
+	Expect(mycsTables[1]).ToNot(BeNil())
+
+	return mycsTables
+}
+
+func getMycsNftSets(nfc *nftables.Conn, table *nftables.Table, setName string) (mycsSet *nftables.Set) {
+
+	sets, err := nfc.GetSets(table)
+	Expect(err).ToNot(HaveOccurred())
+	for _, set := range sets {
+		if set.Name == setName { 
+			mycsSet = set
+			break
+		}
+	}
+	Expect(mycsSet).ToNot(BeNil())
+	return mycsSet
 }

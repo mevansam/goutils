@@ -86,11 +86,11 @@ type RoutableInterface interface {
 
 type FilterRouter interface {
 
-	BlackListIPs(ips []netip.Addr) (string, error)
-	DeleteBlackListIPs(ips []netip.Addr) error
+	AddIPsToDenyList(ips []netip.Addr) error
+	DeleteIPsFromDenyList(ips []netip.Addr) error
 	
-	WhiteListIPs(ips []netip.Addr) (string, error)
-	DeleteWhiteListIPs(ips []netip.Addr) error
+	AddIPsToAllowList(ips []netip.Addr) error
+	DeleteIPsFromAllowList(ips []netip.Addr) error
 
 	SetSecurityGroups(sgs []SecurityGroup, iifName string) error
 	DeleteSecurityGroups(sgs []SecurityGroup, iifName string) error

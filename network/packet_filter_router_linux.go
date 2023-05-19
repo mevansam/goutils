@@ -24,6 +24,8 @@ type packetFilterRouter struct {
 	table  []*nftables.Table
 	chains [][]*nftables.Chain
 
+	ipDenyList, ipAllowList []*nftables.Set
+
 	inboundIFNameVmap []*nftables.Set
 	inboundChains map[string][]*nftables.Chain
 
@@ -35,14 +37,15 @@ type packetFilterRouter struct {
 }
 
 const (
-	filterInput   = 0
-	filterForward = 1
-	filterOutput  = 2
-	natPreRoute   = 3
-	natPostRoute  = 4
+	filterPreRoute = iota
+	filterInput
+	filterForward
+	filterOutput
+	natPreRoute
+	natPostRoute
 )
 
-var keyEnd = []byte{ 0xff, 0xff }
+var ipSetElemTypes = []nftables.SetDatatype{ nftables.TypeIPAddr, nftables.TypeIP6Addr }
 
 func (m *routeManager) NewFilterRouter(denyAll bool) (FilterRouter, error) {
 
@@ -53,15 +56,18 @@ func (m *routeManager) NewFilterRouter(denyAll bool) (FilterRouter, error) {
 	)
 
 	r := &packetFilterRouter{
-		table  : make([]*nftables.Table, 2),
-		chains : make([][]*nftables.Chain, 2),
+		table:  make([]*nftables.Table, 2),
+		chains: make([][]*nftables.Chain, 2),
 
-		inboundIFNameVmap : make([]*nftables.Set, 2),
-		inboundChains     : make(map[string][]*nftables.Chain),
-		sgPortVmaps       : make(map[string]*nftables.Set),
+		ipDenyList:  make([]*nftables.Set, 2),
+		ipAllowList: make([]*nftables.Set, 2),
 
-		ruleMap : make(map[string][]*nftables.Rule),
-		ruleRef : make(map[string]int),
+		inboundIFNameVmap: make([]*nftables.Set, 2),
+		inboundChains:     make(map[string][]*nftables.Chain),
+		sgPortVmaps:       make(map[string]*nftables.Set),
+
+		ruleMap: make(map[string][]*nftables.Rule),
+		ruleRef: make(map[string]int),
 	}
 
 	r.table[0] = r.nft.AddTable(&nftables.Table{
@@ -72,8 +78,8 @@ func (m *routeManager) NewFilterRouter(denyAll bool) (FilterRouter, error) {
 		Family: nftables.TableFamilyIPv6,
 		Name:   "mycs_router_ipv6",
 	})
-	r.chains[0] = make([]*nftables.Chain, 5)
-	r.chains[1] = make([]*nftables.Chain, 5)
+	r.chains[0] = make([]*nftables.Chain, 6)
+	r.chains[1] = make([]*nftables.Chain, 6)
 
 	// NOTE: policy ref for policy constants missing in nftables package
 	var chainPolicyRef = func (p nftables.ChainPolicy) *nftables.ChainPolicy {
@@ -133,6 +139,26 @@ func (m *routeManager) NewFilterRouter(denyAll bool) (FilterRouter, error) {
 			},
 		}
 
+		// set ip_denylist
+		r.ipDenyList[i] = &nftables.Set{
+			Name:     "ip_denylist",
+			Table:    table,
+			KeyType:  ipSetElemTypes[i],
+		}
+		if err = r.nft.AddSet(r.ipDenyList[i], nil); err != nil {
+			return nil, err
+		}
+
+		// set ip_allowlist
+		r.ipAllowList[i] = &nftables.Set{
+			Name:     "ip_allowlist",
+			Table:    table,
+			KeyType:  ipSetElemTypes[i],
+		}
+		if err = r.nft.AddSet(r.ipAllowList[i], nil); err != nil {
+			return nil, err
+		}
+
 		// map inbound_ifname {
 		//   type iifname : verdict
 		//   elements = { "lo" : accept }
@@ -178,6 +204,14 @@ func (m *routeManager) NewFilterRouter(denyAll bool) (FilterRouter, error) {
 		}
 
 		// chains
+		r.chains[i][filterPreRoute] = r.nft.AddChain(&nftables.Chain{
+			Name:     "prerouting",
+			Table:    table,
+			Hooknum:  nftables.ChainHookPrerouting,
+			Priority: nftables.ChainPriorityFilter,
+			Type:     nftables.ChainTypeFilter,
+			Policy:   chainPolicyRef(nftables.ChainPolicyAccept),
+		})
 		r.chains[i][filterInput] = r.nft.AddChain(&nftables.Chain{
 			Name:     "input",
 			Table:    table,
@@ -313,20 +347,204 @@ func (r *packetFilterRouter) getInboundChain(ifname string) ([]*nftables.Chain, 
 	return inboundChain, nil
 }
 
-func (r *packetFilterRouter) BlackListIPs(ips []netip.Addr) (string, error) {
-	return "", nil
+func (r *packetFilterRouter) AddIPsToDenyList(ips []netip.Addr) error {
+
+	var (
+		err error
+		ok  bool
+
+		rules []*nftables.Rule
+	)
+
+	if len(ips) > 0 {
+		if err = r.addIPSetElements(r.ipDenyList, ips); err != nil {
+			return err
+		}
+
+		if _, ok = r.ruleMap["ip_denylist"]; !ok {
+			// if denylist lookup rule is not set then set it
+			for i, chain := range r.getChain(filterPreRoute) {
+				addrLen, srcOffset, _, _ := ipHeaderOffsets(i == 0)
+	
+				rules = append(rules, 
+					// ip saddr @ip_denylist drop
+					&nftables.Rule{
+						Table: chain.Table,
+						Chain: chain,
+						Exprs: []expr.Any{
+							// [ payload load 4b @ network header + 12 (src addr) => reg 1 ]
+							&expr.Payload{
+								DestRegister: 1,
+								Base:         expr.PayloadBaseNetworkHeader,
+								Offset:       srcOffset,
+								Len:          addrLen,
+							},
+							// [ lookup reg 1 set whitelist ]
+							&expr.Lookup{
+								SourceRegister: 1,
+								SetName:        r.ipDenyList[i].Name,
+							},
+							//[ immediate reg 0 drop ]
+							&expr.Verdict{
+								Kind: expr.VerdictDrop,
+							},
+						},
+					},
+				)
+			}
+			err = r.saveFilterRules("ip_denylist", rules)
+		}
+	}
+	return err
 }
 
-func (r *packetFilterRouter) DeleteBlackListIPs(ips []netip.Addr) error {
+func (r *packetFilterRouter) DeleteIPsFromDenyList(ips []netip.Addr) error {
+
+	var (
+		err  error
+		size []int
+	)
+
+	if size, err = r.deleteIPSetElements(r.ipDenyList, ips); err == nil && size[0] == 0 && size[1] == 0 {
+		err = r.DeleteFilter("ip_denylist")
+	}
+	return err
+}
+
+func (r *packetFilterRouter) AddIPsToAllowList(ips []netip.Addr) error {
+
+	var (
+		err error
+		ok  bool
+
+		rules []*nftables.Rule
+	)
+
+	if len(ips) > 0 {
+		if err = r.addIPSetElements(r.ipAllowList, ips); err != nil {
+			return err
+		}
+
+		if _, ok = r.ruleMap["ip_allowlist"]; !ok {
+			// if allowlist lookup rule is not set then set it
+			for i, chain := range r.getChain(filterPreRoute) {
+				addrLen, srcOffset, _, _ := ipHeaderOffsets(i == 0)
+
+				rules = append(rules, 
+					[]*nftables.Rule{
+						// iifname lo accept
+						&nftables.Rule{
+							Table: chain.Table,
+							Chain: chain,
+							Exprs: []expr.Any{
+								// [ meta load iifname => reg 1 ]
+								&expr.Meta{Key: expr.MetaKeyIIFNAME, Register: 1},
+								// [ cmp eq reg 1 lo ]
+								&expr.Cmp{
+									Op:       expr.CmpOpEq,
+									Register: 1,
+									Data:     []byte("lo\x00"),
+								},
+								//[ immediate reg 0 accept ]
+								&expr.Verdict{
+									Kind: expr.VerdictAccept,
+								},
+							},
+						},
+						// ip saddr != @ip_allowlist drop
+						&nftables.Rule{
+							Table: chain.Table,
+							Chain: chain,
+							Exprs: []expr.Any{
+								// [ payload load 4b @ network header + 12 (src addr) => reg 1 ]
+								&expr.Payload{
+									DestRegister: 1,
+									Base:         expr.PayloadBaseNetworkHeader,
+									Offset:       srcOffset,
+									Len:          addrLen,
+								},
+								// [ lookup reg 1 set whitelist ]
+								&expr.Lookup{
+									SourceRegister: 1,
+									SetName:        r.ipAllowList[i].Name,
+									Invert:         true,
+								},
+								//[ immediate reg 0 drop ]
+								&expr.Verdict{
+									Kind: expr.VerdictDrop,
+								},
+							},
+						},
+					}...,
+				)
+			}
+			err = r.saveFilterRules("ip_allowlist", rules)
+		}
+	}
 	return nil
 }
 
-func (r *packetFilterRouter) WhiteListIPs(ips []netip.Addr) (string, error) {
-	return "", nil
+func (r *packetFilterRouter) DeleteIPsFromAllowList(ips []netip.Addr) error {
+
+	var (
+		err  error
+		size []int
+	)
+
+	if size, err = r.deleteIPSetElements(r.ipAllowList, ips); err == nil && size[0] == 0 && size[1] == 0 {
+		err = r.DeleteFilter("ip_allowlist")
+	}
+	return err
 }
 
-func (r *packetFilterRouter) DeleteWhiteListIPs(ips []netip.Addr) error {
+// add ips to an ip set pair
+func (r *packetFilterRouter) addIPSetElements(ipSet []*nftables.Set, ips []netip.Addr) error {
+
+	var (
+		err error
+	)
+
+	ipSetElems := createIPSetElements(ips)
+	for i, setElems := range ipSetElems {
+		if r.nft.SetAddElements(ipSet[i], setElems); err != nil {
+			return err
+		}
+	}
 	return nil
+}
+
+// delete ips from an ip set pair and returns the size of the sets after deletion
+func (r *packetFilterRouter) deleteIPSetElements(ipSet []*nftables.Set, ips []netip.Addr) ([]int, error) {
+
+	var (
+		err error
+
+		elems []nftables.SetElement
+	)
+
+	ipSetElems := createIPSetElements(ips)
+	for i, setElems := range ipSetElems {
+		if r.nft.SetDeleteElements(ipSet[i], setElems); err != nil {
+			return nil, err
+		}
+	}
+	// commit changes
+	if err = r.nft.Flush(); err != nil {
+		return nil, err
+	}
+	// retrieve size of sets
+	size := []int{ 0, 0 }
+	for i, set := range ipSet {
+		if elems, err = r.nft.GetSetElements(set); err != nil {
+			logger.ErrorMessage(
+				"packetFilterRouter.deleteIPSetElements(): Failed to get list of elements for set '%s': %s",
+				set.Name, err.Error(),
+			)
+			continue
+		}
+		size[i] = len(elems)
+	}
+	return size, nil
 }
 
 func (r *packetFilterRouter) SetSecurityGroups(sgs []SecurityGroup, iifName string) error {
@@ -1295,8 +1513,8 @@ func (sg SecurityGroup) CreateSecurityGroupKeys(iifName string) (string, []strin
 
 // helper functions
 
-// returns ip addrLen and srcOffset, destOffset in ip header
-func ipHeaderOffsets(is4 bool) (uint32, uint32, uint32, uint32) {
+// returns ip addrLen and srcOffset, destOffset in ip header and protoOffset in transport header
+func ipHeaderOffsets(is4 bool) (addrLen uint32, srcOffset uint32, destOffset uint32, protoOffset uint32) {
 	if (is4) {
 		return 4, 12, 16, 9
 	} else {
@@ -1352,8 +1570,12 @@ func findRuleInList(rule *nftables.Rule, ruleList []*nftables.Rule) *nftables.Ru
 		ruleExprData = append(ruleExprData, exprData)
 	}
 
+	// fmt.Println(debugPrintRule("Looking up rule in list", rule))
+
 	foundRuleC := make(chan *nftables.Rule, len(ruleList))
 	checkRuleMatch := func(rule, matchRule *nftables.Rule, ruleExprData [][]byte) {
+
+		// fmt.Println(debugPrintRule("Check match of rule from list", matchRule))
 
 		if matchRule.Flags == rule.Flags &&
 			bytes.Equal(matchRule.UserData, rule.UserData) {
@@ -1382,9 +1604,11 @@ func findRuleInList(rule *nftables.Rule, ruleList []*nftables.Rule) *nftables.Ru
 			break
 		}
 	}
+	// fmt.Printf("Found rule: %+v\n", foundRule)
 	return foundRule
 }
 
+// create concatenated key data for port group vmap
 func createPortVMapKeyData(proto Protocol, port int) ([]byte, error) {
 	// key fields should have 4 boundaries
 	//
@@ -1406,6 +1630,20 @@ func createPortVMapKeyData(proto Protocol, port int) ([]byte, error) {
 	// destination port
 	copy(keyData[4:], binaryutil.BigEndian.PutUint16(uint16(port)))
 	return keyData, nil
+}
+
+// create separate lists of ip4 and ip6 set elements given a combine list of ip4/6 ips
+func createIPSetElements(ips []netip.Addr) [][]nftables.SetElement {
+
+	ipSetElems := make([][]nftables.SetElement, 2)
+	for _, ip := range ips {
+		if ip.Is4() {
+			ipSetElems[0] = append(ipSetElems[0], nftables.SetElement{ Key: ip.AsSlice() })
+		} else {
+			ipSetElems[1] = append(ipSetElems[1], nftables.SetElement{ Key: ip.AsSlice() })
+		}
+	}
+	return ipSetElems
 }
 
 // prints rule for debugging
