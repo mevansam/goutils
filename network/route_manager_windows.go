@@ -2,6 +2,10 @@
 
 package network
 
+import (
+	"net/netip"
+)
+
 type routeManager struct {	
 	nc *networkContext
 }
