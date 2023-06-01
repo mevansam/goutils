@@ -329,7 +329,7 @@ var _ = Describe("Route Manager", func() {
 			ritf3, err := routeManager.GetRoutableInterface(itf3.Name)  // interface to lan2
 			Expect(err).ToNot(HaveOccurred())
 
-			// security group allow ssh on ritf1
+			// security group allow ssh from any interface
 			allowSSH := network.SecurityGroup{
 				Ports: []network.PortGroup{
 					{
