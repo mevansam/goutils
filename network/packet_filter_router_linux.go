@@ -939,6 +939,7 @@ func (r *packetFilterRouter) DeleteSecurityGroups(sgs []SecurityGroup, iifName s
 				}
 				if len(elements) == 0 {
 					r.nft.DelSet(sgPortVmap)
+					delete(r.sgPortVmaps, sgPortVmap.Name)
 					flush = true
 				}
 			}
