@@ -75,12 +75,12 @@ type RoutableInterface interface {
 	SetSecurityGroups(sgs []SecurityGroup) ([]string, error)
 	DeleteSecurityGroups(sgs []SecurityGroup) error
 
-	ForwardPortTo(proto Protocol, dstPort int, forwardPort int, forwardIP netip.Addr) error
+	ForwardPortTo(proto Protocol, dstPort int, forwardPort int, forwardIP netip.Addr) (string, error)
 	DeletePortForwardedTo(proto Protocol, dstPort int, forwardPort int, forwardIP netip.Addr) error
 
-	FowardTrafficTo(dstItf RoutableInterface, srcNetwork, dstNetwork string, withNat bool) error
+	FowardTrafficTo(dstItf RoutableInterface, srcNetwork, dstNetwork string, withNat bool) (string, error)
 	DeleteTrafficForwardedTo(dstItf RoutableInterface, srcNetwork, dstNetwork string) error
-	FowardTrafficFrom(srcItf RoutableInterface, srcNetwork, dstNetwork string, withNat bool) error
+	FowardTrafficFrom(srcItf RoutableInterface, srcNetwork, dstNetwork string, withNat bool) (string, error)
 	DeleteTrafficForwardedFrom(srcItf RoutableInterface, srcNetwork, destNetwork string) error
 }
 

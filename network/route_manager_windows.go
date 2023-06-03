@@ -73,24 +73,24 @@ func (i *routableInterface) DeleteSecurityGroups(sgs []SecurityGroup) error {
 	return nil
 }
 
-func (i *routableInterface) ForwardPortTo(proto Protocol, dstPort int, forwardPort int, forwardIP netip.Addr) error {
-	return nil
+func (i *routableInterface) ForwardPortTo(proto Protocol, dstPort int, forwardPort int, forwardIP netip.Addr) (string, error) {
+	return "", nil
 }
 
 func (i *routableInterface) DeletePortForwardedTo(proto Protocol, dstPort int, forwardPort int, forwardIP netip.Addr) error {
 	return nil
 }
 
-func (i *routableInterface) FowardTrafficTo(dstItf RoutableInterface, srcNetwork, dstNetwork string, withNat bool) error {
-	return nil
+func (i *routableInterface) FowardTrafficTo(dstItf RoutableInterface, srcNetwork, dstNetwork string, withNat bool) (string, error) {
+	return "", nil
 }
 
 func (i *routableInterface) DeleteTrafficForwardedTo(dstItf RoutableInterface, srcNetwork, dstNetwork string) error {
 	return nil
 }
 
-func (i *routableInterface) FowardTrafficFrom(srcItf RoutableInterface, srcNetwork, dstNetwork string, withNat bool) error {
-	return nil
+func (i *routableInterface) FowardTrafficFrom(srcItf RoutableInterface, srcNetwork, dstNetwork string, withNat bool) (string, error) {
+	return "", nil
 }
 
 func (i *routableInterface) DeleteTrafficForwardedFrom(srcItf RoutableInterface, srcNetwork, destNetwork string) error {

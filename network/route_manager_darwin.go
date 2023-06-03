@@ -205,19 +205,19 @@ func (i *routableInterface) DeleteSecurityGroups(sgs []SecurityGroup) error {
 	return nil
 }
 
-func (i *routableInterface) ForwardPortTo(proto Protocol, dstPort int, forwardPort int, forwardIP netip.Addr) error {
-	return nil
+func (i *routableInterface) ForwardPortTo(proto Protocol, dstPort int, forwardPort int, forwardIP netip.Addr) (string, error) {
+	return "", nil
 }
 
 func (i *routableInterface) DeletePortForwardedTo(proto Protocol, dstPort int, forwardPort int, forwardIP netip.Addr) error {
 	return nil
 }
 
-func (i *routableInterface) FowardTrafficTo(dstItf RoutableInterface, srcNetwork, dstNetwork string, withNat bool) error {
+func (i *routableInterface) FowardTrafficTo(dstItf RoutableInterface, srcNetwork, dstNetwork string, withNat bool) (string, error) {
 	// NAT packets from src to network this itf is connected
 	// https://gist.github.com/ozel/93c48ff291b83ac648278f0562167b7e
 	// https://apple.stackexchange.com/questions/363099/how-to-forward-traffic-from-one-machine-to-another-with-pfctl
-	return nil
+	return "", nil
 }
 
 func (i *routableInterface) DeleteTrafficForwardedTo(dstItf RoutableInterface, srcNetwork, dstNetwork string) error {
@@ -227,11 +227,11 @@ func (i *routableInterface) DeleteTrafficForwardedTo(dstItf RoutableInterface, s
 	return nil
 }
 
-func (i *routableInterface) FowardTrafficFrom(srcItf RoutableInterface, srcNetwork, dstNetwork string, withNat bool) error {
+func (i *routableInterface) FowardTrafficFrom(srcItf RoutableInterface, srcNetwork, dstNetwork string, withNat bool) (string, error) {
 	// NAT packets from src to network this itf is connected
 	// https://gist.github.com/ozel/93c48ff291b83ac648278f0562167b7e
 	// https://apple.stackexchange.com/questions/363099/how-to-forward-traffic-from-one-machine-to-another-with-pfctl
-	return nil
+	return "", nil
 }
 
 func (i *routableInterface) DeleteTrafficForwardedFrom(srcItf RoutableInterface, srcNetwork, destNetwork string) error {

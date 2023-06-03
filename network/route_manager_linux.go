@@ -306,7 +306,7 @@ func (i *routableInterface) DeleteSecurityGroups(sgs []SecurityGroup) error {
 	return i.m.pfr.DeleteSecurityGroups(sgs, i.link.Attrs().Name)
 }
 
-func (i *routableInterface) ForwardPortTo(proto Protocol, dstPort int, forwardPort int, forwardIP netip.Addr) error {
+func (i *routableInterface) ForwardPortTo(proto Protocol, dstPort int, forwardPort int, forwardIP netip.Addr) (string, error) {
 
 	var (
 		err error
@@ -320,15 +320,14 @@ func (i *routableInterface) ForwardPortTo(proto Protocol, dstPort int, forwardPo
 		dstIP, _, err = i.address(netlink.FAMILY_V6)
 	}
 	if err != nil {
-		return err
+		return "", err
 	}
 
-	_, err = i.m.pfr.ForwardPortOnIP(
+	return i.m.pfr.ForwardPortOnIP(
 		dstPort, forwardPort, 
 		dstIP, forwardIP, 
 		proto,
 	)
-	return err
 }
 
 func (i *routableInterface) DeletePortForwardedTo(proto Protocol, dstPort int, forwardPort int, forwardIP netip.Addr) error {
@@ -355,7 +354,7 @@ func (i *routableInterface) DeletePortForwardedTo(proto Protocol, dstPort int, f
 	)
 }
 
-func (i *routableInterface) FowardTrafficTo(dstItf RoutableInterface, srcNetwork, dstNetwork string, withNat bool) error {
+func (i *routableInterface) FowardTrafficTo(dstItf RoutableInterface, srcNetwork, dstNetwork string, withNat bool) (string, error) {
 	return dstItf.FowardTrafficFrom(i, srcNetwork, dstNetwork, withNat)
 }
 
@@ -363,7 +362,7 @@ func (i *routableInterface) DeleteTrafficForwardedTo(dstItf RoutableInterface, s
 	return dstItf.DeleteTrafficForwardedFrom(i, srcNetwork, dstNetwork)
 }
 
-func (i *routableInterface) FowardTrafficFrom(srcItf RoutableInterface, srcNetwork, dstNetwork string, withNat bool) error {
+func (i *routableInterface) FowardTrafficFrom(srcItf RoutableInterface, srcNetwork, dstNetwork string, withNat bool) (string, error) {
 
 	var (
 		err error
@@ -374,20 +373,19 @@ func (i *routableInterface) FowardTrafficFrom(srcItf RoutableInterface, srcNetwo
 	srcRitf := srcItf.(*routableInterface)
 
 	if srcNetworkPrefix, err = srcRitf.getNetworkPrefix(srcNetwork); err != nil {
-		return err
+		return "", err
 	}
 	if dstNetworkPrefix, err = i.getNetworkPrefix(dstNetwork); err != nil {
-		return err
+		return "", err
 	}	
 
-	_, err = i.m.pfr.ForwardTraffic(
+	return i.m.pfr.ForwardTraffic(
 		srcRitf.link.Attrs().Name,
 		i.link.Attrs().Name,
 		srcNetworkPrefix,
 		dstNetworkPrefix,
 		withNat,
 	)
-	return err
 }
 
 func (i *routableInterface) DeleteTrafficForwardedFrom(srcItf RoutableInterface, srcNetwork, dstNetwork string) error {

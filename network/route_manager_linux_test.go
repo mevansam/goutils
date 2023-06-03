@@ -182,16 +182,16 @@ var _ = Describe("Route Manager", func() {
 			Expect(ritf3NW).To(Equal("192.168.11.0/24"))
 
 			// forward packets from lan1 to world (ip v4)
-			err = ritf1.FowardTrafficFrom(ritf2, network.LAN4, network.WORLD4, true)
+			_, err = ritf1.FowardTrafficFrom(ritf2, network.LAN4, network.WORLD4, true)
 			Expect(err).ToNot(HaveOccurred())
 			// forward packets from lan1 to lan2 (ip v4)
-			err = ritf3.FowardTrafficFrom(ritf2, network.LAN4, network.LAN4, false)
+			_, err = ritf3.FowardTrafficFrom(ritf2, network.LAN4, network.LAN4, false)
 			Expect(err).ToNot(HaveOccurred())
 			// forward packets from lan2 to external network 8.8.8.8/32 only (ip v4)
-			err = ritf1.FowardTrafficFrom(ritf3, network.LAN4, "8.8.8.8/32", true)
+			_, err = ritf1.FowardTrafficFrom(ritf3, network.LAN4, "8.8.8.8/32", true)
 			Expect(err).ToNot(HaveOccurred())
 			// forward packets from lan2 to lan1 (ip v4)
-			err = ritf2.FowardTrafficFrom(ritf3, network.LAN4, network.LAN4, false)
+			_, err = ritf2.FowardTrafficFrom(ritf3, network.LAN4, network.LAN4, false)
 			Expect(err).ToNot(HaveOccurred())
 
 			showNftRuleset()
@@ -253,7 +253,7 @@ var _ = Describe("Route Manager", func() {
 			Expect(err).ToNot(HaveOccurred())
 
 			// forward 192.168.10.1:8080 to 192.168.11.1:80
-			err = ritf2.ForwardPortTo(network.TCP, 8080, 80, netip.MustParseAddr("192.168.11.10"))
+			_, err = ritf2.ForwardPortTo(network.TCP, 8080, 80, netip.MustParseAddr("192.168.11.10"))
 			Expect(err).ToNot(HaveOccurred())
 			// forward :8888 to 192.168.10.1:80
 			_, err = filterRouter.ForwardPort(8888, 80, netip.MustParseAddr("192.168.10.10"), network.TCP)
@@ -413,10 +413,10 @@ var _ = Describe("Route Manager", func() {
 			Expect(err).ToNot(HaveOccurred())
 
 			// forward packets from lan1 to lan2 (ip v4)
-			err = ritf3.FowardTrafficFrom(ritf2, network.LAN4, network.LAN4, false)
+			_, err = ritf3.FowardTrafficFrom(ritf2, network.LAN4, network.LAN4, false)
 			Expect(err).ToNot(HaveOccurred())
 			// forward packets from lan2 to lan1 (ip v4)
-			err = ritf2.FowardTrafficFrom(ritf3, network.LAN4, network.LAN4, false)
+			_, err = ritf2.FowardTrafficFrom(ritf3, network.LAN4, network.LAN4, false)
 			Expect(err).ToNot(HaveOccurred())
 
 			showNftRuleset()
