@@ -20,6 +20,8 @@ var privateNetworks = []netip.Prefix{
 	netip.MustParsePrefix("fe80::/10"),
 }
 
+// returns whether the given ipv4 or 
+// ipv6 address is a private address
 func IsPrivateAddr(addr netip.Addr) bool {
 	for _, privateNetwork := range privateNetworks {
 		if privateNetwork.Contains(addr) {
@@ -27,6 +29,45 @@ func IsPrivateAddr(addr netip.Addr) bool {
 		}
 	}
 	return false
+}
+
+// resolves the given list of domain
+// names and returns their corresponding
+// as two lists. The first list will
+// either be a flattened list of all
+// resolved ips as stringsor just the 
+// first resolved ip giving a 1:1 mapping 
+// to the given names. The second list is 
+// a list of ips resolved for each name.
+func ResolveNames(dnsNames []string, flatten bool) ([]string, [][]string, error) {
+
+	var (
+		err error
+
+		resolvedIPs []net.IP
+	)
+	ipsFlat  := []string{}
+	namedIPs := [][]string{}
+
+	for _, name := range dnsNames {	
+		if resolvedIPs, err = net.LookupIP(name); err != nil {
+			return nil, nil, err
+		}
+		ips := []string{}
+		namedIPs = append(namedIPs, ips)
+
+		for i, ip := range resolvedIPs {			
+			ipAddr := ip.String()
+			ips = append(ips, ipAddr)
+			if flatten {
+				ipsFlat = append(ipsFlat, ipAddr)
+			} else if i == 0 {
+				ipsFlat = append(ipsFlat, ipAddr)
+			}
+		}	
+	}
+
+	return ipsFlat, namedIPs, nil
 }
 
 // test tcp connection
