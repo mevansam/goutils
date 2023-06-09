@@ -607,6 +607,7 @@ func (r *packetFilterRouter) SetSecurityGroups(sgs []SecurityGroup, iifName stri
 			continue
 		}
 
+		rules = nil
 		sgExprsPre := []expr.Any{}
 
 		// For tcp and udp protocols create rule that binds to port group vmap
@@ -725,110 +726,125 @@ func (r *packetFilterRouter) SetSecurityGroups(sgs []SecurityGroup, iifName stri
 					)
 				}
 
-				// add port filter rules to vmap
-				for _, pg := range sg.Ports {
+				if len(sg.Ports) > 0 {
+					// add port filter rules to vmap
+					for _, pg := range sg.Ports {
 
-					if pg.Proto == ICMP {
-						// rule added only once for all port groups. so
-						// any additional port groups with icmp protocol
-						// will be ignored as icmp is a special case
-						addICPMRule.Do(func(){
-							// icmp needs to be handled as a seperate pool
-							// from port lookup as icmp packets do not have
-							// the a transport header port field
-							rules = append(rules,
-								&nftables.Rule{
-									Table: chain.Table,
-									Chain: chain,
-									Exprs: append(sgExprs,
-										// [ meta load l4proto => reg 1 ]
-										&expr.Meta{Key: expr.MetaKeyL4PROTO, Register: 1},
-										// [ cmp eq reg 1 <protoData> ]
-										&expr.Cmp{
-											Op:       expr.CmpOpEq,
-											Register: 1,
-											Data:     []byte{unix.IPPROTO_ICMP},
-										},
-										// accept
-										&expr.Verdict{
-											// [ immediate reg 0 drop/accept ]
-											Kind: verdict,
-										},
-									),
-								},
-							)
-						})
-
-					} else {
-						// rule added only once for all port groups
-						addVMapPortRule.Do(func(){
-							if sgPortVmap, err = r.getSecurityGroupPortVMap(pgVmapName[i], chain.Table); err == nil {
-								// port filters are added to the port vmap so
-								// the a vmap lookup binding needs to be created
+						if pg.Proto == ICMP {
+							// rule added only once for all port groups. so
+							// any additional port groups with icmp protocol
+							// will be ignored as icmp is a special case
+							addICPMRule.Do(func(){
+								// icmp needs to be handled as a seperate pool
+								// from port lookup as icmp packets do not have
+								// the a transport header port field
 								rules = append(rules,
 									&nftables.Rule{
 										Table: chain.Table,
 										Chain: chain,
 										Exprs: append(sgExprs,
-											// [ payload load 1b @ network header + <protoOffset> => reg 9 ]
-											&expr.Payload{
-												Len:          1,
-												Base:         expr.PayloadBaseNetworkHeader,
-												Offset:       protoOffset, // Protocol IPv4 / NextHdr IPv6
-												DestRegister: 9,
+											// [ meta load l4proto => reg 1 ]
+											&expr.Meta{Key: expr.MetaKeyL4PROTO, Register: 1},
+											// [ cmp eq reg 1 <protoData> ]
+											&expr.Cmp{
+												Op:       expr.CmpOpEq,
+												Register: 1,
+												Data:     []byte{unix.IPPROTO_ICMP},
 											},
-											// [ payload load 2b @ transport header + 2 (dest port) => reg 10 ]
-											&expr.Payload{
-												Len:          2,
-												Base:         expr.PayloadBaseTransportHeader,
-												Offset:       2, // Destination Port
-												DestRegister: 10,
-											},
-											// [ lookup reg 1 map <sgPortVmap> ]
-											&expr.Lookup{
-												SourceRegister: 9,
-												SetName:        sgPortVmap.Name,
-												DestRegister:   0,
-												IsDestRegSet:   true,
+											// [ immediate reg 0 drop/accept ]
+											&expr.Verdict{
+												Kind: verdict,
 											},
 										),
 									},
 								)
-								
-							} else {
-								logger.ErrorMessage(
-									"packetFilterRouter.SetSecurityGroups(): Failed to retrieve security group port vmap with name '%s' for table '%s': %s",
-									 pgVmapName[i], chain.Table.Name, err.Error(),
-								)
-							}
-						})
-						if sgPortVmap == nil {
-							continue
-						}
-						for p := pg.FromPort; p <= pg.ToPort; p++ {
-							
-							if keyData, err = createPortVMapKeyData(pg.Proto, p); err != nil {
-								logger.ErrorMessage(
-									"packetFilterRouter.SetSecurityGroups(): Unable to create key data for port access rule in map '%s' for table '%s': %s",
-									pgVmapName[i], chain.Table.Name, err.Error(),
-								)
+							})
+	
+						} else {
+							// rule added only once for all port groups
+							addVMapPortRule.Do(func(){
+								if sgPortVmap, err = r.getSecurityGroupPortVMap(pgVmapName[i], chain.Table); err == nil {
+									// port filters are added to the port vmap so
+									// the a vmap lookup binding needs to be created
+									rules = append(rules,
+										&nftables.Rule{
+											Table: chain.Table,
+											Chain: chain,
+											Exprs: append(sgExprs,
+												// [ payload load 1b @ network header + <protoOffset> => reg 9 ]
+												&expr.Payload{
+													Len:          1,
+													Base:         expr.PayloadBaseNetworkHeader,
+													Offset:       protoOffset, // Protocol IPv4 / NextHdr IPv6
+													DestRegister: 9,
+												},
+												// [ payload load 2b @ transport header + 2 (dest port) => reg 10 ]
+												&expr.Payload{
+													Len:          2,
+													Base:         expr.PayloadBaseTransportHeader,
+													Offset:       2, // Destination Port
+													DestRegister: 10,
+												},
+												// [ lookup reg 1 map <sgPortVmap> ]
+												&expr.Lookup{
+													SourceRegister: 9,
+													SetName:        sgPortVmap.Name,
+													DestRegister:   0,
+													IsDestRegSet:   true,
+												},
+											),
+										},
+									)
+									
+								} else {
+									logger.ErrorMessage(
+										"packetFilterRouter.SetSecurityGroups(): Failed to retrieve security group port vmap with name '%s' for table '%s': %s",
+										 pgVmapName[i], chain.Table.Name, err.Error(),
+									)
+								}
+							})
+							if sgPortVmap == nil {
 								continue
 							}
-							if err = r.nft.SetAddElements(sgPortVmap,
-								[]nftables.SetElement{
-									{
-										Key:         keyData,
-										VerdictData: &expr.Verdict{ Kind: verdict },
+							for p := pg.FromPort; p <= pg.ToPort; p++ {
+								
+								if keyData, err = createPortVMapKeyData(pg.Proto, p); err != nil {
+									logger.ErrorMessage(
+										"packetFilterRouter.SetSecurityGroups(): Unable to create key data for port access rule in map '%s' for table '%s': %s",
+										pgVmapName[i], chain.Table.Name, err.Error(),
+									)
+									continue
+								}
+								if err = r.nft.SetAddElements(sgPortVmap,
+									[]nftables.SetElement{
+										{
+											Key:         keyData,
+											VerdictData: &expr.Verdict{ Kind: verdict },
+										},
 									},
-								},
-							); err != nil {
-								logger.ErrorMessage(
-									"packetFilterRouter.SetSecurityGroups(): Failed to add port access rule in map '%s' for table '%s': %s",
-									pgVmapName[i], chain.Table.Name, err.Error(),
-								)
+								); err != nil {
+									logger.ErrorMessage(
+										"packetFilterRouter.SetSecurityGroups(): Failed to add port access rule in map '%s' for table '%s': %s",
+										pgVmapName[i], chain.Table.Name, err.Error(),
+									)
+								}
 							}
 						}
 					}
+
+				} else {
+					rules = append(rules,
+						&nftables.Rule{
+							Table: chain.Table,
+							Chain: chain,
+							Exprs: append(sgExprs,
+								// [ immediate reg 0 drop/accept ]
+								&expr.Verdict{
+									Kind: verdict,
+								},
+							),
+						},
+					)
 				}
 			}
 		}		
