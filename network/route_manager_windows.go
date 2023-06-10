@@ -35,7 +35,7 @@ func (m *routeManager) NewRoutableInterface(ifaceName, address string) (Routable
 }
 
 func (m *routeManager) NewFilterRouter(denyAll bool) (FilterRouter, error) {
-	return nil, nil
+	return nil, fmt.Errorf("filter router has not been implemented for windows os")
 }
 
 func (m *routeManager) AddExternalRouteToIPs(ips []string) error {
