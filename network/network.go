@@ -72,7 +72,7 @@ type RoutableInterface interface {
 	Address6() (string, string, error)
 	MakeDefaultRoute() error
 
-	SetSecurityGroups(sgs []SecurityGroup) ([]string, error)
+	SetSecurityGroups(sgs []SecurityGroup) error
 	DeleteSecurityGroups(sgs []SecurityGroup) error
 
 	ForwardPortTo(proto Protocol, dstPort int, forwardPort int, forwardIP netip.Addr) (string, error)
@@ -92,7 +92,7 @@ type FilterRouter interface {
 	AddIPsToAllowList(ips []netip.Addr) error
 	DeleteIPsFromAllowList(ips []netip.Addr) error
 
-	SetSecurityGroups(sgs []SecurityGroup, iifName string) ([]string, error)
+	SetSecurityGroups(sgs []SecurityGroup, iifName string) error
 	DeleteSecurityGroups(sgs []SecurityGroup, iifName string) error
 
 	ForwardPort(dstPort, forwardPort int, forwardIP netip.Addr, proto Protocol) (string, error)

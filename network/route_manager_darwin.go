@@ -198,8 +198,8 @@ func addDefaultRoute(gateway string) error {
 	return nil
 }
 
-func (i *routableInterface) SetSecurityGroups(sgs []SecurityGroup) ([]string, error) {
-	return nil, nil
+func (i *routableInterface) SetSecurityGroups(sgs []SecurityGroup) error {
+	return nil
 }
 
 func (i *routableInterface) DeleteSecurityGroups(sgs []SecurityGroup) error {

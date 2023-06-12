@@ -298,7 +298,7 @@ func (i *routableInterface) MakeDefaultRoute() error {
 	})
 }
 
-func (i *routableInterface) SetSecurityGroups(sgs []SecurityGroup) ([]string, error) {
+func (i *routableInterface) SetSecurityGroups(sgs []SecurityGroup) error {
 	return i.m.pfr.SetSecurityGroups(sgs, i.link.Attrs().Name)
 }
 

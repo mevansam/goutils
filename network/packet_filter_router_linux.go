@@ -547,7 +547,7 @@ func (r *packetFilterRouter) deleteIPSetElements(ipSet []*nftables.Set, ips []ne
 	return size, nil
 }
 
-func (r *packetFilterRouter) SetSecurityGroups(sgs []SecurityGroup, iifName string) ([]string, error) {
+func (r *packetFilterRouter) SetSecurityGroups(sgs []SecurityGroup, iifName string) error {
 
 	// chain inbound_<itf_name>
 	//
@@ -583,7 +583,6 @@ func (r *packetFilterRouter) SetSecurityGroups(sgs []SecurityGroup, iifName stri
 		err error
 
 		sgKey      string
-		sgKeys     []string
 		pgVmapName []string
 
 		keyData    []byte
@@ -853,11 +852,10 @@ func (r *packetFilterRouter) SetSecurityGroups(sgs []SecurityGroup, iifName stri
 				"packetFilterRouter.SetSecurityGroups(): Failed to create security group filter rule with sgKey '%s': %s",
 				sgKey, err.Error(),
 			)
-		} else {
-			sgKeys = append(sgKeys, sgKey)
-		}		
+			return err
+		}	
 	}
-	return sgKeys, nil
+	return nil
 }
 
 func (r *packetFilterRouter) DeleteSecurityGroups(sgs []SecurityGroup, iifName string) error {

@@ -314,7 +314,7 @@ var _ = Describe("Route Manager", func() {
 			time.Sleep(time.Second * manualValidationPauseSecs) // increase to pause for manual validation
 		})
 
-		It("applies firewall rules using security groups", func() {
+		FIt("applies firewall rules using security groups", func() {
 			if skipTests {
 				fmt.Println("No second interface so skipping test \"applies firewall rules using security groups\"...")
 			}
@@ -510,6 +510,14 @@ var _ = Describe("Route Manager", func() {
 				"nft list ruleset | sed -n '/^table ip mycs_router_ipv4 {/,/^}/p' | sed -n '/chain inbound_eth1 {/,/}/p'",
 				inboundItf2Matches, 0, 1,
 			)
+
+			// add back the rule and validate no errors
+			_, err = filterRouter.SetSecurityGroups([]network.SecurityGroup{allowCustom}, "")
+			Expect(err).ToNot(HaveOccurred())
+			_, err = filterRouter.SetSecurityGroups([]network.SecurityGroup{allowSSH}, "")
+			Expect(err).ToNot(HaveOccurred())
+			_, err = ritf2.SetSecurityGroups([]network.SecurityGroup{allowICMToItf2,denyMultipleTo11})
+			Expect(err).ToNot(HaveOccurred())
 
 			time.Sleep(time.Second * manualValidationPauseSecs) // increase to pause for manual validation
 		})
