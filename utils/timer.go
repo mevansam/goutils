@@ -134,7 +134,6 @@ func (t *ExecTimer) startTimer(timeout time.Duration) {
 	}	
 }
 func (t *ExecTimer) setTimerTicker(timeout time.Duration) {
-
 	t.mx.Lock()
 	defer t.mx.Unlock()
 
@@ -157,6 +156,9 @@ func (t *ExecTimer) setTimerTicker(timeout time.Duration) {
 }
 
 func (t *ExecTimer) Stop() error {
+	t.mx.Lock()
+	defer t.mx.Unlock()
+
 	t.inflight.Wait()
 
 	if t.timeoutTimer != nil {
