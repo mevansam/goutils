@@ -24,6 +24,8 @@ type packetFilterRouter struct {
 	table  []*nftables.Table
 	chains [][]*nftables.Chain
 
+	forwardChainCtPos []uint64
+
 	ipDenyList, ipAllowList []*nftables.Set
 
 	inboundIFNameVmap []*nftables.Set
@@ -45,7 +47,14 @@ const (
 	natPostRoute
 )
 
-var ipSetElemTypes = []nftables.SetDatatype{ nftables.TypeIPAddr, nftables.TypeIP6Addr }
+var (
+	// negative offset will give chains created for 
+	// this router a high priority compared chains 
+	// in the kernal with default priorities
+	NftChainPriorityOffset int32 = 0
+
+	ipSetElemTypes = []nftables.SetDatatype{ nftables.TypeIPAddr, nftables.TypeIP6Addr }
+)
 
 func (m *routeManager) NewFilterRouter(denyAll bool) (FilterRouter, error) {
 
@@ -53,11 +62,15 @@ func (m *routeManager) NewFilterRouter(denyAll bool) (FilterRouter, error) {
 		err error
 
 		fwPolicy *nftables.ChainPolicy
+		
+		forwardRules []*nftables.Rule
 	)
 
 	r := &packetFilterRouter{
 		table:  make([]*nftables.Table, 2),
 		chains: make([][]*nftables.Chain, 2),
+
+		forwardChainCtPos: make([]uint64, 2),
 
 		ipDenyList:  make([]*nftables.Set, 2),
 		ipAllowList: make([]*nftables.Set, 2),
@@ -81,6 +94,11 @@ func (m *routeManager) NewFilterRouter(denyAll bool) (FilterRouter, error) {
 	r.chains[0] = make([]*nftables.Chain, 6)
 	r.chains[1] = make([]*nftables.Chain, 6)
 
+	// sets chain priority based on given default
+	var chainPriorityRef = func(p *nftables.ChainPriority) *nftables.ChainPriority {
+		cp := nftables.ChainPriority(int32(*p) + NftChainPriorityOffset)
+		return &cp
+	}
 	// NOTE: policy ref for policy constants missing in nftables package
 	var chainPolicyRef = func (p nftables.ChainPolicy) *nftables.ChainPolicy {
 		return &p
@@ -208,7 +226,7 @@ func (m *routeManager) NewFilterRouter(denyAll bool) (FilterRouter, error) {
 			Name:     "prerouting",
 			Table:    table,
 			Hooknum:  nftables.ChainHookPrerouting,
-			Priority: nftables.ChainPriorityFilter,
+			Priority: chainPriorityRef(nftables.ChainPriorityFilter),
 			Type:     nftables.ChainTypeFilter,
 			Policy:   chainPolicyRef(nftables.ChainPolicyAccept),
 		})
@@ -216,7 +234,7 @@ func (m *routeManager) NewFilterRouter(denyAll bool) (FilterRouter, error) {
 			Name:     "input",
 			Table:    table,
 			Hooknum:  nftables.ChainHookInput,
-			Priority: nftables.ChainPriorityFilter,
+			Priority: chainPriorityRef(nftables.ChainPriorityFilter),
 			Type:     nftables.ChainTypeFilter,
 			Policy:   fwPolicy,
 		})
@@ -224,7 +242,7 @@ func (m *routeManager) NewFilterRouter(denyAll bool) (FilterRouter, error) {
 			Name:     "forward",
 			Table:    table,
 			Hooknum:  nftables.ChainHookForward,
-			Priority: nftables.ChainPriorityFilter,
+			Priority: chainPriorityRef(nftables.ChainPriorityFilter),
 			Type:     nftables.ChainTypeFilter,
 			Policy:   fwPolicy,
 		})
@@ -232,7 +250,7 @@ func (m *routeManager) NewFilterRouter(denyAll bool) (FilterRouter, error) {
 			Name:     "output",
 			Table:    table,
 			Hooknum:  nftables.ChainHookOutput,
-			Priority: nftables.ChainPriorityFilter,
+			Priority: chainPriorityRef(nftables.ChainPriorityFilter),
 			Type:     nftables.ChainTypeFilter,
 			Policy:   chainPolicyRef(nftables.ChainPolicyAccept),
 		})
@@ -240,7 +258,7 @@ func (m *routeManager) NewFilterRouter(denyAll bool) (FilterRouter, error) {
 			Name:     "nat_prerouting",
 			Table:    table,
 			Hooknum:  nftables.ChainHookPrerouting,
-			Priority: nftables.ChainPriorityNATDest,
+			Priority: chainPriorityRef(nftables.ChainPriorityNATDest),
 			Type:     nftables.ChainTypeNAT,
 			Policy:   chainPolicyRef(nftables.ChainPolicyAccept),
 		})
@@ -248,7 +266,7 @@ func (m *routeManager) NewFilterRouter(denyAll bool) (FilterRouter, error) {
 			Name:     "nat_postrouting",
 			Table:    table,
 			Hooknum:  nftables.ChainHookPostrouting,
-			Priority: nftables.ChainPriorityNATSource,
+			Priority: chainPriorityRef(nftables.ChainPriorityNATSource),
 			Type:     nftables.ChainTypeNAT,
 			Policy:   chainPolicyRef(nftables.ChainPolicyAccept),
 		})
@@ -281,6 +299,15 @@ func (m *routeManager) NewFilterRouter(denyAll bool) (FilterRouter, error) {
 	if err = r.nft.Flush(); err != nil {
 		return nil, err
 	}
+	// retrieve handle for ct state rule for forward chain. all 
+	// forward security groups will be inserted before this rule.
+	for i, table := range r.table {
+		if forwardRules, err = r.nft.GetRules(table, r.chains[i][filterForward]); err != nil {
+			return nil, err
+		}
+		r.forwardChainCtPos[i] = forwardRules[0].Handle
+	}
+
 	m.pfr = r
 	return m.pfr, nil
 }
@@ -392,7 +419,7 @@ func (r *packetFilterRouter) AddIPsToDenyList(ips []netip.Addr) error {
 					},
 				)
 			}
-			err = r.saveFilterRules("ip_denylist", rules)
+			err = r.saveFilterRules("ip_denylist", rules, false)
 		}
 	}
 	return err
@@ -478,7 +505,7 @@ func (r *packetFilterRouter) AddIPsToAllowList(ips []netip.Addr) error {
 					}...,
 				)
 			}
-			err = r.saveFilterRules("ip_allowlist", rules)
+			err = r.saveFilterRules("ip_allowlist", rules, false)
 		}
 	}
 	return nil
@@ -591,6 +618,7 @@ func (r *packetFilterRouter) SetSecurityGroups(sgs []SecurityGroup, iifName stri
 		verdict expr.VerdictKind
 		rules   []*nftables.Rule
 	)
+	nullPos := []uint64{0, 0}
 
 	for _, sg := range sgs {
 		logger.TraceMessage("packetFilterRouter.SetSecurityGroups(): Applying security group: %# v", sg)
@@ -620,6 +648,8 @@ func (r *packetFilterRouter) SetSecurityGroups(sgs []SecurityGroup, iifName stri
 		// add filter to forward chain unless
 		// otherwise determined below
 		targetChain := r.getChain(filterForward)
+		insertPos := r.forwardChainCtPos
+		insert := true
 
 		if len(iifName) > 0 {
 			if !sg.DstNetwork.IsValid() {
@@ -630,6 +660,8 @@ func (r *packetFilterRouter) SetSecurityGroups(sgs []SecurityGroup, iifName stri
 					logger.ErrorMessage("packetFilterRouter.SetSecurityGroups(): Failed to get/create inbound chain for interface '%s': %s", iifName, err.Error())
 					continue
 				}
+				insertPos = nullPos
+				insert = false
 
 			} else {
 				sgExprsPre = append(sgExprsPre,
@@ -647,6 +679,8 @@ func (r *packetFilterRouter) SetSecurityGroups(sgs []SecurityGroup, iifName stri
 		} else if !sg.DstNetwork.IsValid() {
 			// no dst network so add filter to the input chain
 			targetChain = r.getChain(filterInput)
+			insertPos = nullPos
+			insert = false
 		}
 
 		// apply rules to both ip4 and ipv6 chains
@@ -698,6 +732,19 @@ func (r *packetFilterRouter) SetSecurityGroups(sgs []SecurityGroup, iifName stri
 						},
 					)
 				}
+				if len(sg.Oifname) > 0 {
+					oifname := []byte(sg.Oifname+"\x00")
+					sgExprs = append(sgExprs,
+						// [ meta load oifname => reg 1 ]
+						&expr.Meta{Key: expr.MetaKeyOIFNAME, Register: 1},
+						// [ cmp eq reg 1 <oifname> ]
+						&expr.Cmp{
+							Op:       expr.CmpOpEq,
+							Register: 1,
+							Data:     oifname,
+						},
+					)
+				}
 				if sg.DstNetwork.IsValid() {
 					dstNetworkMask := net.CIDRMask(sg.DstNetwork.Bits(), int(addrLen)*8)
 					sgExprs = append(sgExprs,
@@ -741,6 +788,7 @@ func (r *packetFilterRouter) SetSecurityGroups(sgs []SecurityGroup, iifName stri
 									&nftables.Rule{
 										Table: chain.Table,
 										Chain: chain,
+										Position: insertPos[i],
 										Exprs: append(sgExprs,
 											// [ meta load l4proto => reg 1 ]
 											&expr.Meta{Key: expr.MetaKeyL4PROTO, Register: 1},
@@ -769,6 +817,7 @@ func (r *packetFilterRouter) SetSecurityGroups(sgs []SecurityGroup, iifName stri
 										&nftables.Rule{
 											Table: chain.Table,
 											Chain: chain,
+											Position: insertPos[i],
 											Exprs: append(sgExprs,
 												// [ payload load 1b @ network header + <protoOffset> => reg 9 ]
 												&expr.Payload{
@@ -836,6 +885,7 @@ func (r *packetFilterRouter) SetSecurityGroups(sgs []SecurityGroup, iifName stri
 						&nftables.Rule{
 							Table: chain.Table,
 							Chain: chain,
+							Position: insertPos[i],
 							Exprs: append(sgExprs,
 								// [ immediate reg 0 drop/accept ]
 								&expr.Verdict{
@@ -847,7 +897,7 @@ func (r *packetFilterRouter) SetSecurityGroups(sgs []SecurityGroup, iifName stri
 				}
 			}
 		}		
-		if err = r.saveFilterRules(sgKey, rules); err != nil {
+		if err = r.saveFilterRules(sgKey, rules, insert); err != nil {
 			logger.ErrorMessage(
 				"packetFilterRouter.SetSecurityGroups(): Failed to create security group filter rule with sgKey '%s': %s",
 				sgKey, err.Error(),
@@ -1183,7 +1233,7 @@ func (r *packetFilterRouter) ForwardPortOnIP(dstPort, forwardPort int, dstIP, fo
 		forwardIP.String(), forwardPort,
 		string(proto),
 	)
-	return ruleKey, r.saveFilterRules(ruleKey, rules)
+	return ruleKey, r.saveFilterRules(ruleKey, rules, false)
 }
 
 func (r *packetFilterRouter) DeleteForwardPortOnIP(dstPort, forwardPort int, dstIP, forwardIP netip.Addr, proto Protocol) error {
@@ -1287,7 +1337,7 @@ func (r *packetFilterRouter) ForwardTraffic(srcItfName, dstItfName string, srcNe
 						Register: 1,
 						Data:     iifname,
 					},
-					// [ meta load iifname => reg 1 ]
+					// [ meta load oifname => reg 1 ]
 					&expr.Meta{Key: expr.MetaKeyOIFNAME, Register: 1},
 					// [ cmp eq reg 1 <oifname> ]
 					&expr.Cmp{
@@ -1338,7 +1388,7 @@ func (r *packetFilterRouter) ForwardTraffic(srcItfName, dstItfName string, srcNe
 		srcItfName, srcNetwork.String(),
 		dstItfName, dstNetwork.String(),
 	)
-	return ruleKey, r.saveFilterRules(ruleKey, rules)
+	return ruleKey, r.saveFilterRules(ruleKey, rules, false)
 }
 
 func (r *packetFilterRouter) DeleteForwardTraffic(srcItfName, dstItfName string, srcNetwork, dstNetwork netip.Prefix) error {
@@ -1350,7 +1400,7 @@ func (r *packetFilterRouter) DeleteForwardTraffic(srcItfName, dstItfName string,
 	)
 }
 
-func (r *packetFilterRouter) saveFilterRules(key string, rules []*nftables.Rule) error {
+func (r *packetFilterRouter) saveFilterRules(key string, rules []*nftables.Rule, insert bool) error {
 
 	var (
 		err error
@@ -1365,7 +1415,11 @@ func (r *packetFilterRouter) saveFilterRules(key string, rules []*nftables.Rule)
 			return err
 		}
 		if foundRule = findRuleInList(rule, savedRules); foundRule == nil {
-			r.nft.AddRule(rule)
+			if insert {
+				r.nft.InsertRule(rule)
+			} else {
+				r.nft.AddRule(rule)
+			}
 		}
 	}
 	// flush rules

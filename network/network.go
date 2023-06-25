@@ -23,6 +23,8 @@ type SecurityGroup struct {
 	SrcNetwork,
 	DstNetwork netip.Prefix
 
+	Oifname string
+
 	Ports []PortGroup
 }
 type PortGroup struct {

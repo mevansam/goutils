@@ -339,7 +339,7 @@ var _ = Describe("Route Manager", func() {
 					},
 				},
 			}
-			_, err = filterRouter.SetSecurityGroups([]network.SecurityGroup{allowSSH}, "")
+			err = filterRouter.SetSecurityGroups([]network.SecurityGroup{allowSSH}, "")
 			Expect(err).ToNot(HaveOccurred())
 			allowCustom := network.SecurityGroup{
 				Ports: []network.PortGroup{
@@ -360,7 +360,7 @@ var _ = Describe("Route Manager", func() {
 					},
 				},
 			}
-			_, err = filterRouter.SetSecurityGroups([]network.SecurityGroup{allowCustom}, "")
+			err = filterRouter.SetSecurityGroups([]network.SecurityGroup{allowCustom}, "")
 			Expect(err).ToNot(HaveOccurred())
 			denyMultipleTo11 := network.SecurityGroup{
 				Deny: true,
@@ -389,7 +389,7 @@ var _ = Describe("Route Manager", func() {
 					},
 				},
 			}
-			_, err = ritf2.SetSecurityGroups([]network.SecurityGroup{allowICMToItf2,denyMultipleTo11})
+			err = ritf2.SetSecurityGroups([]network.SecurityGroup{allowICMToItf2,denyMultipleTo11})
 			Expect(err).ToNot(HaveOccurred())
 			denyHTTPto10 := network.SecurityGroup{
 				Deny: true,
@@ -409,7 +409,7 @@ var _ = Describe("Route Manager", func() {
 					},
 				},
 			}
-			_, err = ritf3.SetSecurityGroups([]network.SecurityGroup{allowICMToItf3,denyHTTPto10})
+			err = ritf3.SetSecurityGroups([]network.SecurityGroup{allowICMToItf3,denyHTTPto10})
 			Expect(err).ToNot(HaveOccurred())
 
 			// forward packets from lan1 to lan2 (ip v4)
@@ -512,11 +512,11 @@ var _ = Describe("Route Manager", func() {
 			)
 
 			// add back the rule and validate no errors
-			_, err = filterRouter.SetSecurityGroups([]network.SecurityGroup{allowCustom}, "")
+			err = filterRouter.SetSecurityGroups([]network.SecurityGroup{allowCustom}, "")
 			Expect(err).ToNot(HaveOccurred())
-			_, err = filterRouter.SetSecurityGroups([]network.SecurityGroup{allowSSH}, "")
+			err = filterRouter.SetSecurityGroups([]network.SecurityGroup{allowSSH}, "")
 			Expect(err).ToNot(HaveOccurred())
-			_, err = ritf2.SetSecurityGroups([]network.SecurityGroup{allowICMToItf2,denyMultipleTo11})
+			err = ritf2.SetSecurityGroups([]network.SecurityGroup{allowICMToItf2,denyMultipleTo11})
 			Expect(err).ToNot(HaveOccurred())
 
 			time.Sleep(time.Second * manualValidationPauseSecs) // increase to pause for manual validation
