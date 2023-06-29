@@ -15,7 +15,9 @@ import (
 // starts it invokes the call back to determin
 // the trigger interval.
 type ExecTimer struct {
-	ctx      context.Context
+	ctx    context.Context
+	cancel context.CancelFunc
+
 	inflight sync.WaitGroup
 	stop     chan bool
 
@@ -34,14 +36,16 @@ func NewExecTimer(
 	callback func() (time.Duration, error),
 	stopOnError bool,
 ) *ExecTimer {
-	
-	return &ExecTimer{
-		ctx:  ctx,
+
+	t := &ExecTimer{
 		stop: make(chan bool),
 
 		callback:    callback,
 		stopOnError: stopOnError,
 	}
+	t.ctx, t.cancel = context.WithCancel(ctx)
+	
+	return t
 }
 
 func (t *ExecTimer) Start(timeout time.Duration) error {
@@ -49,11 +53,7 @@ func (t *ExecTimer) Start(timeout time.Duration) error {
 	if timeout == 0 {
 		t.invokeCallback()
 		return t.callbackError
-	}	
-	
-	// consider inflight until next 
-	// invocation is scheduled
-	t.inflight.Add(1)
+	}
 
 	go t.startTimer(timeout)
 	return nil
@@ -80,6 +80,7 @@ func (t *ExecTimer) invokeCallback() bool {
 	}
 	// invocation is inflight
 	t.inflight.Add(1)
+	defer t.inflight.Done()
 	if timeout, err = t.callback(); err != nil {
 		t.callbackError = err
 
@@ -90,23 +91,17 @@ func (t *ExecTimer) invokeCallback() bool {
 		}
 	}
 
-	var isNewTimeout = func() bool {
+	if func() bool {
 		t.mx.Lock()
 		defer t.mx.Unlock()
 		return timeout == 0 || timeout == t.tickTime
-	}
-	if isNewTimeout() {	
-		// inflight is done as returning false 
-		// will not cancel the timer loop
-		t.inflight.Done()
-
-		// resume timer loop
+	}() {	
+		// no change to timeout so resume timer loop
 		return false
 	}
 
 	// start a new timer as timeout has changed
 	go t.startTimer(timeout)
-
 	// returns true to exit the timer loop as
 	// either a new timeout has been set
 	return true
@@ -121,8 +116,11 @@ func (t *ExecTimer) startTimer(timeout time.Duration) {
 	for {
 		select {
 		case <-t.ctx.Done():
-			<-t.stop // ctx was cancelled and stop was called			
-			t.callbackError = t.ctx.Err()			
+			if t.ctx.Err() == context.Canceled {
+				<-t.stop // ctx was cancelled so wait for stop to be called
+			} else {
+				t.callbackError = t.ctx.Err()			
+			}
 			return
 		case <-t.stop:
 			return
@@ -133,6 +131,7 @@ func (t *ExecTimer) startTimer(timeout time.Duration) {
 		}
 	}	
 }
+
 func (t *ExecTimer) setTimerTicker(timeout time.Duration) {
 	t.mx.Lock()
 	defer t.mx.Unlock()
@@ -149,23 +148,17 @@ func (t *ExecTimer) setTimerTicker(timeout time.Duration) {
 		t.tickTime = timeout
 		t.timeoutTimer = time.NewTicker(t.tickTime * time.Millisecond)
 	}
-
-	// inflight invocation is done as
-	// next invocation has been scheduled
-	t.inflight.Done()
 }
 
 func (t *ExecTimer) Stop() error {
-	t.mx.Lock()
-	defer t.mx.Unlock()
-
+	t.cancel()
 	t.inflight.Wait()
 
 	if t.timeoutTimer != nil {
 		t.timeoutTimer.Stop()
 		t.timeoutTimer = nil
 
-		// wait for current timer to stop
+		// signal current timer to stop
 		t.stop <-true
 	}
 	return t.callbackError
