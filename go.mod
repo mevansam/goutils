@@ -1,6 +1,6 @@
 module github.com/mevansam/goutils
 
-go 1.19
+go 1.20
 
 require (
 	github.com/gin-gonic/gin v1.7.7
