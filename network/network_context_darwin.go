@@ -190,7 +190,7 @@ func readNetworkInfo() {
 
 	// determine network service name for default device
 	if err = routeget.Run([]string{ "get", "1.1.1.1" }); err != nil {
-		logger.ErrorMessage("networkContext.init(): Error running \"route get 1.1.1.1\": %s", err.Error())
+		logger.DebugMessage("networkContext.init(): Error running \"route get 1.1.1.1\": %s", err.Error())
 		initErr <- err
 		return
 	}
